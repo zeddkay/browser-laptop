@@ -970,7 +970,7 @@ const api = {
     }
   },
 
-  moveTo: (state, tabId, frameOpts, browserOpts, toWindowId) => {
+  moveTo: (state, tabId, frameOpts, browserOpts, toWindowId, onReady) => {
     frameOpts = makeImmutable(frameOpts)
     browserOpts = makeImmutable(browserOpts)
     const tab = webContentsCache.getWebContents(tabId)
@@ -1019,6 +1019,10 @@ const api = {
           // ask for tab to be attached (via frame state and webview) to
           // specified window
           appActions.newWebContentsAdded(toWindowId, frameOpts, tabValue)
+        }
+
+        if (onReady) {
+          tab.once('guest-ready', onReady)
         }
         // handle tab has made it to the new window
         tab.once('did-attach', () => {
