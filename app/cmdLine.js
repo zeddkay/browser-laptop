@@ -18,6 +18,7 @@ const fs = require('fs')
 const path = require('path')
 let appInitialized = false
 let newWindowURL
+const debugWindowEventsFlagName = '--debug-window-events'
 
 const focusOrOpenWindow = function (url) {
   // don't try to do anything if the app hasn't been initialized
@@ -136,3 +137,5 @@ module.exports.newWindowURL = () => {
   }
   return newWindowURL
 }
+
+module.exports.shouldDebugWindowEvents = process.argv.includes(debugWindowEventsFlagName)
