@@ -540,6 +540,13 @@ const createDebugSubmenu = (state) => {
       click: function (menuItem, browserWindow, e) {
         appActions.changeSetting(settings.DEBUG_ALLOW_MANUAL_TAB_DISCARD, menuItem.checked)
       }
+    }, {
+      label: 'Display tab identifiers',
+      type: 'checkbox',
+      checked: !!getSetting(settings.DEBUG_VERBOSE_TAB_INFO),
+      click: function (menuItem, browserWindow, e) {
+        appActions.changeSetting(settings.DEBUG_VERBOSE_TAB_INFO, menuItem.checked)
+      }
     }
   ]
 }
@@ -670,6 +677,9 @@ const doAction = (state, action) => {
       }
       if (action.key === settings.DEBUG_ALLOW_MANUAL_TAB_DISCARD) {
         setMenuItemChecked(state, 'Allow manual tab discarding', action.value)
+      }
+      if (action.key === settings.DEBUG_VERBOSE_TAB_INFO) {
+        setMenuItemChecked(state, 'Display tab identifiers', action.value)
       }
       break
     case windowConstants.WINDOW_UNDO_CLOSED_FRAME:
