@@ -387,7 +387,9 @@ const UrlUtil = {
       parsed.hostname = punycode.toASCII(parsed.hostname)
       return urlFormat(parsed)
     } catch (e) {
-      return punycode.toASCII(url)
+      var splitUrl = url.split('@')
+      splitUrl = splitUrl.map(str => punycode.toASCII(str))
+      return splitUrl.join('@')
     }
   },
 
@@ -433,7 +435,7 @@ const UrlUtil = {
     }
 
     const localFileOrigins = ['file:', 'blob:', 'data:', 'chrome-extension:', 'chrome:']
-    return origin && localFileOrigins.some((localFileOrigin) => origin.startsWith(localFileOrigin))
+    return localFileOrigins.some((localFileOrigin) => origin.startsWith(localFileOrigin))
   },
 
   getDisplayHost: (url) => {

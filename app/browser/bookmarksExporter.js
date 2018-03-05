@@ -5,7 +5,7 @@
 'use strict'
 
 const path = require('path')
-const moment = require('moment')
+const format = require('date-fns/format')
 const fs = require('fs')
 const electron = require('electron')
 const dialog = electron.dialog
@@ -29,7 +29,7 @@ const indentType = ' '
 
 const showDialog = (state) => {
   const focusedWindow = BrowserWindow.getFocusedWindow()
-  const fileName = moment().format('DD_MM_YYYY') + '.html'
+  const fileName = format(new Date(), 'DD_MM_YYYY') + '.html'
   const defaultPath = path.join(getSetting(settings.DOWNLOAD_DEFAULT_PATH) || app.getPath('downloads'), fileName)
   let personal = []
   let other = []
@@ -43,7 +43,7 @@ const showDialog = (state) => {
       personal = createBookmarkArray(state)
       other = createBookmarkArray(state, -1, false)
       try {
-        fs.writeFileSync(fileName, createBookmarkHTML(personal, other))
+        fs.writeFileSync(fileNames[0], createBookmarkHTML(personal, other))
       } catch (e) {
         console.log('Error exporting bookmarks: ', e)
       }

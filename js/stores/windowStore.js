@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* global performance */
-
 const appDispatcher = require('../dispatcher/appDispatcher')
 const EventEmitter = require('events').EventEmitter
 const appActions = require('../actions/appActions')
@@ -177,14 +175,21 @@ const newFrame = (state, frameOpts) => {
 const frameTabIdChanged = (state, action) => {
   action = makeImmutable(action)
   const oldTabId = action.get('oldTabId')
-  const newTabId = action.get('newTabId')
+  const newTabValue = action.get('newTabValue')
+  const newTabId = newTabValue.get('tabId')
   if (newTabId == null || oldTabId === newTabId) {
+    console.error('Invalid action arguments for frameTabIdChanged')
     return state
   }
 
   let newFrameProps = new Immutable.Map()
   newFrameProps = newFrameProps.set('tabId', newTabId)
-  const index = frameStateUtil.getFrameIndex(state, action.getIn(['frameProps', 'key']))
+  const frame = frameStateUtil.getFrameByTabId(state, oldTabId)
+  if (!frame) {
+    console.error(`Could not find frame with tabId ${oldTabId} in order to replace with new tabId ${newTabId}`)
+    return state
+  }
+  const index = frameStateUtil.getFrameIndex(state, frame.get('key'))
   state = state.mergeIn(['frames', index], newFrameProps)
   state = frameStateUtil.deleteTabInternalIndex(state, oldTabId)
   state = frameStateUtil.updateFramesInternalIndex(state, index)
@@ -263,7 +268,7 @@ const doAction = (action) => {
       }
       // We should not emit here because the Window already know about the change on startup.
       return
-    case windowConstants.WINDOW_FRAME_TAB_ID_CHANGED:
+    case appConstants.APP_TAB_REPLACED:
       windowState = frameTabIdChanged(windowState, action)
       break
     case windowConstants.WINDOW_FRAME_GUEST_INSTANCE_ID_CHANGED:
@@ -349,8 +354,10 @@ const doAction = (action) => {
       if (!action.location) {
         windowState = windowState.set('closedFrames', new Immutable.List())
       } else {
+        const closedFrames = windowState.get('closedFrames', Immutable.List()) || Immutable.List()
         windowState = windowState.set('closedFrames',
-          windowState.get('closedFrames').filterNot((frame) => frame.get('location') === action.location))
+          closedFrames.filterNot((frame) => frame.get('location') === action.location)
+        )
       }
       break
     case windowConstants.WINDOW_SET_PREVIEW_TAB_PAGE_INDEX:
@@ -752,21 +759,18 @@ const doAction = (action) => {
         }
         break
       }
-    case windowConstants.WINDOW_ON_WINDOW_UPDATE:
     case appConstants.APP_WINDOW_READY:
-      {
-        const oldInfo = windowState.get('windowInfo', Immutable.Map())
-        let windowValue = makeImmutable(action.windowValue)
-
-        if (windowValue.get('focused')) {
-          windowValue = windowValue.set('focusTime', performance.timing.navigationStart + performance.now())
-        }
-        windowState = windowState.set('windowInfo', oldInfo.merge(windowValue))
-        break
-      }
     case appConstants.APP_WINDOW_UPDATED:
     case appConstants.APP_WINDOW_RESIZED:
-      windowState = windowState.set('windowInfo', action.windowValue)
+      let windowValue = makeImmutable(action.windowValue)
+      const oldInfo = windowState.get('windowInfo', Immutable.Map())
+      // detect if window is newly focused
+      if (windowValue.get('focused') && !oldInfo.get('focused')) {
+        // record time of focus so we can make sure the window
+        // z-index is restored on app-restart
+        windowValue = windowValue.set('focusTime', new Date().getTime())
+      }
+      windowState = windowState.set('windowInfo', oldInfo.merge(windowValue))
       break
     case windowConstants.WINDOW_TAB_MOVE_INCREMENTAL_REQUESTED:
       const sourceFrame = frameStateUtil.getActiveFrame(windowState)

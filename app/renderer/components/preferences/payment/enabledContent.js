@@ -4,7 +4,7 @@
 
 const React = require('react')
 const {StyleSheet, css} = require('aphrodite/no-important')
-const moment = require('moment')
+const addMonths = require('date-fns/add_months')
 const Immutable = require('immutable')
 
 // util
@@ -28,7 +28,6 @@ const LedgerTable = require('./ledgerTable')
 // style
 const globalStyles = require('../../styles/global')
 const {paymentStylesVariables} = require('../../styles/payment')
-const {loaderAnimation} = require('../../styles/animations')
 const closeButton = require('../../../../../img/toolbar/stoploading_btn.svg')
 const cx = require('../../../../../js/lib/classSet')
 
@@ -179,7 +178,7 @@ class EnabledContent extends ImmutableComponent {
     let l10nDataId = 'statusNextReconcileDate'
 
     if (!nextReconcileDateRelative) {
-      nextReconcileDateRelative = formattedDateFromTimestamp(moment().add(1, 'months'), 'MMMM Do')
+      nextReconcileDateRelative = formattedDateFromTimestamp(addMonths(Date.now(), 1), 'MMMM Do')
     } else {
       const timestamp = ledgerData.get('reconcileStamp')
       const now = new Date().getTime()
@@ -266,40 +265,30 @@ class EnabledContent extends ImmutableComponent {
     </div>
   }
 
+  get deletedSitesLink () {
+    if (this.props.showDeletedSites) {
+      return <span>
+        <a data-l10n-id='showDeletedSitesDialog'
+          data-test-id='showDeletedSitesDialog'
+          className={css(styles.enabledContent__footer__link)}
+          onClick={this.props.showOverlay.bind(this, 'deletedSites')}
+        />
+        <span
+          className={css(styles.enabledContent__footer__link, styles.enabledContent__footer__separator)}
+        >|</span>
+      </span>
+    }
+
+    return null
+  }
+
   render () {
     const ledgerData = this.props.ledgerData
     const walletStatusText = walletStatus(ledgerData)
     const contributionAmount = ledgerState.getContributionAmount(null, ledgerData.get('contributionAmount'), this.props.settings)
-    const inTransition = ledgerData.getIn(['migration', 'btc2BatTransitionPending']) === true
     const amountList = ledgerData.get('monthlyAmounts') || ledgerUtil.defaultMonthlyAmounts
 
     return <section className={css(styles.enabledContent)}>
-      <div className={css(
-        styles.enabledContent__loader,
-        inTransition && styles.enabledContent__loader_show
-      )}>
-        <div className={css(styles.enabledContent__loader__text)}>
-          <p data-l10n-id='leaderLoaderText1' />
-          <p data-l10n-id='leaderLoaderText2' />
-        </div>
-        <div className={css(styles.enabledContent__loader__wrap)}>
-          <div className={css(
-            styles.enabledContent__loader__wrap__line,
-            styles.enabledContent__loader__wrap__line_1,
-            !inTransition && styles.enabledContent__loader__wrap__line_off
-          )} />
-          <div className={css(
-            styles.enabledContent__loader__wrap__line,
-            styles.enabledContent__loader__wrap__line_2,
-            !inTransition && styles.enabledContent__loader__wrap__line_off
-          )} />
-          <div className={css(
-            styles.enabledContent__loader__wrap__line,
-            styles.enabledContent__loader__wrap__line_3,
-            !inTransition && styles.enabledContent__loader__wrap__line_off
-          )} />
-        </div>
-      </div>
       <div className={css(styles.enabledContent__walletBar)} data-test-id='walletBar'>
         <div className={css(gridStyles.row1col1, styles.enabledContent__walletBar__title)} data-l10n-id='monthlyBudget' />
         <div className={css(gridStyles.row1col2, styles.enabledContent__walletBar__title)} data-l10n-id='accountBalance' />
@@ -362,9 +351,10 @@ class EnabledContent extends ImmutableComponent {
         onChangeSetting={this.props.onChangeSetting}
         siteSettings={this.props.siteSettings} />
       <div className={css(styles.enabledContent__tos)}>
+        { this.deletedSitesLink }
         <a data-l10n-id='termsOfService'
           data-test-id='termsOfService'
-          className={css(styles.enabledContent__tos__link)}
+          className={css(styles.enabledContent__footer__link)}
           href='https://basicattentiontoken.org/contributor-terms-of-service/'
           target='_blank'
           rel='noreferrer noopener' />
@@ -463,72 +453,14 @@ const styles = StyleSheet.create({
     padding: '20px 60px'
   },
 
-  enabledContent__tos__link: {
+  enabledContent__footer__link: {
     fontSize: '13px',
     color: '#666'
   },
 
-  enabledContent__loader: {
-    background: '#fafafa',
-    zIndex: 3,
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    width: '100%',
-    height: '100%',
-    margin: 0,
-    opacity: 0,
-    transform: 'translateX(-1000%)',
-    transition: 'opacity .4s ease-out, transform .1s .4s ease'
-  },
-
-  enabledContent__loader_show: {
-    opacity: 1,
-    transform: 'translateX(0)',
-    transition: 'opacity .4s ease-out'
-  },
-
-  enabledContent__loader__text: {
-    textAlign: 'center',
-    padding: '50px 0 20px',
-    display: 'block',
-    color: '#444'
-  },
-
-  enabledContent__loader__wrap: {
-    width: '45px',
-    left: 0,
-    right: 0,
-    margin: '50px auto 0'
-  },
-
-  enabledContent__loader__wrap__line: {
+  enabledContent__footer__separator: {
     display: 'inline-block',
-    width: '15px',
-    height: '15px',
-    borderRadius: '15px',
-    animationName: [loaderAnimation],
-    animationDuration: '.6s',
-    animationIterationCount: 'infinite'
-  },
-
-  enabledContent__loader__wrap__line_1: {
-    backgroundColor: '#FF5000',
-    animationDelay: '.1s'
-  },
-
-  enabledContent__loader__wrap__line_2: {
-    backgroundColor: '#9E1F63',
-    animationDelay: '.2s'
-  },
-
-  enabledContent__loader__wrap__line_3: {
-    backgroundColor: '#662D91',
-    animationDelay: '.3s'
-  },
-
-  enabledContent__loader__wrap__line_off: {
-    animationName: 'none'
+    padding: '0 10px'
   },
 
   enabledContent__grant: {

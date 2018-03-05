@@ -26,6 +26,8 @@ const getSetting = require('../../../../../js/settings').getSetting
 const aboutActions = require('../../../../../js/about/aboutActions')
 const urlUtil = require('../../../../../js/lib/urlutil')
 const {SettingCheckbox, SiteSettingCheckbox} = require('../../common/settings')
+const locale = require('../../../../../js/l10n')
+const ledgerUtil = require('../../../../common/lib/ledgerUtil')
 
 class LedgerTable extends ImmutableComponent {
   get synopsis () {
@@ -100,7 +102,10 @@ class LedgerTable extends ImmutableComponent {
   }
 
   banSite (hostPattern) {
-    aboutActions.changeSiteSetting(hostPattern, 'ledgerPaymentsShown', false)
+    const confMsg = locale.translation('banSiteConfirmation')
+    if (window.confirm(confMsg)) {
+      aboutActions.changeSiteSetting(hostPattern, 'ledgerPaymentsShown', false)
+    }
   }
 
   togglePinSite (hostPattern, pinned, percentage) {
@@ -149,6 +154,25 @@ class LedgerTable extends ImmutableComponent {
     ]
   }
 
+  getImage (faviconURL, providerName, publisherKey) {
+    if (!faviconURL && providerName) {
+      faviconURL = ledgerUtil.getDefaultMediaFavicon(providerName)
+    }
+
+    if (!faviconURL) {
+      return <span className={css(styles.siteData__anchor__icon_default)}>
+        <span className={globalStyles.appIcons.defaultIcon} />
+      </span>
+    }
+
+    return <img
+      className={css(styles.siteData__anchor__icon_favicon)}
+      src={faviconURL}
+      alt=''
+      onError={this.onFaviconError.bind(null, faviconURL, publisherKey)}
+    />
+  }
+
   getRow (synopsis) {
     const faviconURL = synopsis.get('faviconURL')
     const views = synopsis.get('views')
@@ -158,6 +182,7 @@ class LedgerTable extends ImmutableComponent {
     const publisherURL = synopsis.get('publisherURL')
     const percentage = pinned ? this.pinPercentageValue(synopsis) : synopsis.get('percentage')
     const publisherKey = synopsis.get('publisherKey')
+    const providerName = synopsis.get('providerName')
     const siteName = synopsis.get('siteName')
     const defaultAutoInclude = this.enabledForSite(synopsis)
 
@@ -169,17 +194,13 @@ class LedgerTable extends ImmutableComponent {
     return [
       {
         html: verified && this.getVerifiedIcon(synopsis),
-        value: ''
+        value: verified ? (this.enabledForSite(synopsis) ? 2 : 1) : 0
       },
       {
         html: <div className={css(styles.siteData)}>
           <a className={css(styles.siteData__anchor)} href={publisherURL} rel='noopener' target='_blank' tabIndex={-1}>
-            {
-              faviconURL
-                ? <img className={css(styles.siteData__anchor__icon_favicon)} src={faviconURL} alt='' onError={this.onFaviconError.bind(null, faviconURL, publisherKey)} />
-                : <span className={css(styles.siteData__anchor__icon_default)}><span className={globalStyles.appIcons.defaultIcon} /></span>
-            }
-            <span className={css(styles.siteData__anchor__url)} data-test-id='siteName'>{siteName}</span>
+            { this.getImage(faviconURL, providerName, publisherKey) }
+            <span className={css(styles.siteData__anchor__url)} title={siteName} data-test-id='siteName'>{siteName}</span>
           </a>
         </div>,
         value: publisherKey
@@ -218,7 +239,7 @@ class LedgerTable extends ImmutableComponent {
               defaultValue={percentage}
               patern={this.getHostPattern(synopsis)}
             />
-            : percentage
+            : <span className={css(styles.regularPercentage)}>{percentage}</span>
           }
         </span>,
         value: percentage
@@ -297,6 +318,7 @@ class LedgerTable extends ImmutableComponent {
         fillAvailable
         smallRow
         headings={['', 'publisher', 'include', 'views', 'timeSpent', 'percentage', 'actions']}
+        nonSortableColumns={['actions']}
         defaultHeading='percentage'
         defaultHeadingSortOrder='desc'
         headerStyles={styles.header}
@@ -407,6 +429,13 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
 
+  siteData__anchor: {
+    width: '430px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap'
+  },
+
   siteData__anchor__icon_favicon: {
     width: globalStyles.spacing.iconSize,
     height: globalStyles.spacing.iconSize
@@ -491,6 +520,10 @@ const styles = StyleSheet.create({
   ledgerTable__showAll: {
     textAlign: 'center',
     marginTop: globalStyles.spacing.panelMargin
+  },
+
+  regularPercentage: {
+    paddingRight: '10px'
   }
 })
 

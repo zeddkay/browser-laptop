@@ -86,7 +86,7 @@ module.exports = {
   },
   httpsEverywhere: {
     url: 'https://s3.amazonaws.com/https-everywhere-data/{version}/httpse.json',
-    version: '5.2', // latest major point release from https://eff.org/https-everywhere
+    version: '6.0',
     msBetweenRechecks: 1000 * 60 * 60 * 12, // 1/2 day
     enabled: true
   },
@@ -230,7 +230,8 @@ module.exports = {
     'general.is-default-browser': null,
     'notification-add-funds-timestamp': null,
     'notification-reconcile-soon-timestamp': null,
-
+    // debug
+    'debug.manual-tab-discard.enabled': false,
     // DEPRECATED settings
     // DO NOT REMOVE OR CHANGE THESE VALUES
     // ########################

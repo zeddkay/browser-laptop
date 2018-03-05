@@ -221,9 +221,19 @@ const appActions = {
     })
   },
 
+  discardTabRequested: function (tabId) {
+    dispatch({
+      actionType: appConstants.APP_DISCARD_TAB_REQUESTED,
+      tabId
+    })
+  },
+
   /**
    * A request for a new tab has been made with the specified createProperties
    * @param {Object} createProperties
+   * @param {Boolean} activateIfOpen if the tab is already open with the same properties,
+   * switch to it instead of creating a new one
+   * @param {Boolean} isRestore when true, won't try to activate the new tab, even if the user preference indicates to
    */
   createTabRequested: function (createProperties, activateIfOpen = false, isRestore = false) {
     dispatch({
@@ -291,6 +301,18 @@ const appActions = {
       changeInfo,
       queryInfo: {
         windowId: tabValue.get('windowId')
+      }
+    })
+  },
+
+  tabReplaced: function (oldTabId, newTabValue, windowId, isPermanent) {
+    dispatch({
+      actionType: appConstants.APP_TAB_REPLACED,
+      oldTabId,
+      newTabValue,
+      isPermanent,
+      queryInfo: {
+        windowId
       }
     })
   },
@@ -758,14 +780,14 @@ const appActions = {
   },
 
   /**
-   * Dispatch a message to copy data URL to clipboard
+   * Dispatch a message to copy image
    **/
-  dataURLCopied: function (dataURL, html, text) {
+  copyImage: function (tabId, x, y) {
     dispatch({
-      actionType: appConstants.APP_DATA_URL_COPIED,
-      dataURL,
-      html,
-      text
+      actionType: appConstants.APP_COPY_IMAGE,
+      tabId,
+      x,
+      y
     })
   },
 
@@ -1649,6 +1671,13 @@ const appActions = {
     })
   },
 
+  onPublishersOptionUpdate: function (publishersArray) {
+    dispatch({
+      actionType: appConstants.APP_ON_PUBLISHERS_OPTION_UPDATE,
+      publishersArray
+    })
+  },
+
   onLedgerWalletCreate: function () {
     dispatch({
       actionType: appConstants.APP_ON_LEDGER_WALLET_CREATE
@@ -1762,15 +1791,6 @@ const appActions = {
     })
   },
 
-  onPinnedTabReorder: function (siteKey, destinationKey, prepend) {
-    dispatch({
-      actionType: appConstants.APP_ON_PINNED_TAB_REORDER,
-      siteKey,
-      destinationKey,
-      prepend
-    })
-  },
-
   /**
    * Dispatches a message that bookmark calculation was done
    * @param bookmarkList {Object} - Object is a list of bookmarks with key, width and parentFolderId as a property
@@ -1805,24 +1825,6 @@ const appActions = {
       queryInfo: {
         windowId
       }
-    })
-  },
-
-  onBitcoinToBatNotified: function () {
-    dispatch({
-      actionType: appConstants.APP_ON_BTC_TO_BAT_NOTIFIED
-    })
-  },
-
-  onBitcoinToBatTransitioned: function () {
-    dispatch({
-      actionType: appConstants.APP_ON_BTC_TO_BAT_TRANSITIONED
-    })
-  },
-
-  onBitcoinToBatBeginTransition: function () {
-    dispatch({
-      actionType: appConstants.APP_ON_BTC_TO_BAT_BEGIN_TRANSITION
     })
   },
 
@@ -1897,6 +1899,39 @@ const appActions = {
     dispatch({
       actionType: appConstants.APP_ON_PRUNE_SYNOPSIS,
       publishers
+    })
+  },
+
+  onReferralCodeRead: function (downloadId, promoCode) {
+    dispatch({
+      actionType: appConstants.APP_ON_REFERRAL_CODE_READ,
+      downloadId,
+      promoCode
+    })
+  },
+
+  onReferralCodeFail: function () {
+    dispatch({
+      actionType: appConstants.APP_ON_REFERRAL_CODE_FAIL
+    })
+  },
+
+  onFileRecoveryKeys: function (file) {
+    dispatch({
+      actionType: appConstants.APP_ON_FILE_RECOVERY_KEYS,
+      file
+    })
+  },
+
+  checkReferralActivity: function () {
+    dispatch({
+      actionType: appConstants.APP_CHECK_REFERRAL_ACTIVITY
+    })
+  },
+
+  onReferralActivity: function () {
+    dispatch({
+      actionType: appConstants.APP_ON_REFERRAL_ACTIVITY
     })
   },
 

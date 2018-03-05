@@ -2,6 +2,17 @@ var VersionInfo = require('./lib/versionInfo')
 var execute = require('./lib/execute')
 var format = require('util').format
 var path = require('path')
+var fs = require('fs')
+
+const fileExists = (path) => new Promise((resolve, reject) => fs.access(path, (err, exists) => {
+  resolve(!err)
+}))
+const execPromise = (cmd) => new Promise((resolve, reject) => {
+  execute(cmd, {}, err => {
+    if (err) return reject(err)
+    resolve()
+  })
+})
 
 const isWindows = process.platform === 'win32'
 const isDarwin = process.platform === 'darwin'
@@ -43,7 +54,9 @@ switch (channel) {
     throw new Error('CHANNEL environment variable must be set to nightly, developer, beta or dev')
 }
 
+var tarName
 if (isLinux) {
+  tarName = appName
   appName = appName.toLowerCase()
 }
 
@@ -91,9 +104,11 @@ if (isDarwin) {
   const wvResources = wvContents + '/Resources'
   const wvBundleSig = wvResources + '/Brave Framework.sig'
   const wvPlugin = buildDir + `/${appName}.app/Contents/Frameworks/Brave Framework.framework/Libraries/WidevineCdm/_platform_specific/mac_x64/widevinecdmadapter.plugin`
+  // choose pkg or dmg based on channel
   cmds = [
     // Remove old
     'rm -f ' + outDir + `/${appName}.dmg`,
+    'rm -f ' + outDir + `/${appName}.pkg`,
 
     // sign for widevine
     'mkdir -p "' + wvResources + '"',
@@ -103,29 +118,50 @@ if (isDarwin) {
     'python tools/signature_generator.py --input_file "' + wvBundle + '" --output_file "' + wvBundleSig + '" --flag 1',
     'python tools/signature_generator.py --input_file "' + wvPlugin + '"',
 
-    // Sign it
+    // Sign it (requires Apple 'Developer ID Application' certificate installed in keychain)
     'cd ' + buildDir + `/${appName}.app/Contents/Frameworks`,
     'codesign --deep --force --strict --verbose --sign $IDENTIFIER *',
     'cd ../../..',
     `codesign --deep --force --strict --verbose --sign $IDENTIFIER ${appName}.app/`,
 
-    // Package it into a dmg
+    // Package it into a dmg and/or package
     'cd ..',
     'build ' +
-      '--prepackaged="' + buildDir + `/${appName}.app" ` +
-      '--mac=dmg ' +
-      ` --config=res/${channel}/builderConfig.json `,
+      `--prepackaged="${buildDir}/${appName}.app" ` +
+      `--config=res/${channel}/builderConfig.json ` +
+      '--publish=never',
 
     // Create an update zip
     'ditto -c -k --sequesterRsrc --keepParent ' + buildDir + `/${appName}.app dist/${appName}-` + VersionInfo.braveVersion + '.zip'
   ]
-  execute(cmds, {}, (err) => {
+  execute(cmds, {}, async (err) => {
     if (err) {
       raiseError('building installer failed: ' + JSON.stringify(err))
       return
     }
 
-    console.log.bind(null, 'done')
+    // sign pkg if it exists (requires Apple 'Developer ID Installer' certificate installed in keychain)
+    const fileName = `${appName}-${VersionInfo.braveVersion}`
+    const packagePath = path.join(outDir, `${fileName}.pkg`)
+    const packagePathUnsigned = path.join(outDir, `${fileName}_unsigned.pkg`)
+
+    const pkgExists = await fileExists(packagePath)
+    if (pkgExists) {
+      console.log(`Signing pkg at ${packagePath}`)
+      try {
+        await execPromise([
+          `mv ${packagePath} ${packagePathUnsigned}`,
+          `productsign --sign ${identifier} ${packagePathUnsigned} ${packagePath}`,
+          `rm ${packagePathUnsigned}`
+        ])
+        console.log(`pkg signing complete`)
+      } catch (e) {
+        console.error('Error signing pkg:')
+        raiseError(e)
+        return
+      }
+    }
+    console.log('done')
   })
 } else if (isWindows) {
   // a cert file must be present to sign the created package
@@ -204,7 +240,7 @@ if (isDarwin) {
       ' --arch x86_64' +
       ` --config res/${channel}/suse.json`,
     // .tar.bz2 file
-    `tar -jcvf dist/${appName}.tar.bz2 ./${appName}-linux-x64`
+    `tar -jcvf dist/${tarName}.tar.bz2 ./${appName}-linux-x64`
   ]
   execute(cmds, {}, (err) => {
     if (err) {

@@ -5,7 +5,7 @@
 'use strict'
 
 const acorn = require('acorn')
-const moment = require('moment')
+const format = require('date-fns/format')
 const Immutable = require('immutable')
 const electron = require('electron')
 const ipc = electron.ipcMain
@@ -26,17 +26,18 @@ const appActions = require('../../../js/actions/appActions')
 // State
 const ledgerState = require('../../common/state/ledgerState')
 const pageDataState = require('../../common/state/pageDataState')
-const migrationState = require('../../common/state/migrationState')
+const updateState = require('../../common/state/updateState')
 
 // Constants
 const settings = require('../../../js/constants/settings')
 const messages = require('../../../js/constants/messages')
 
 // Utils
+const config = require('../../../js/constants/buildConfig')
 const tabs = require('../../browser/tabs')
 const locale = require('../../locale')
 const getSetting = require('../../../js/settings').getSetting
-const {fileUrl, getSourceAboutUrl, isSourceAboutUrl} = require('../../../js/lib/appUrlUtil')
+const {getSourceAboutUrl, isSourceAboutUrl} = require('../../../js/lib/appUrlUtil')
 const urlParse = require('../../common/urlParse')
 const ruleSolver = require('../../extensions/brave/content/scripts/pageInformation')
 const request = require('../../../js/lib/request')
@@ -45,6 +46,9 @@ const tabState = require('../../common/state/tabState')
 const pageDataUtil = require('../../common/lib/pageDataUtil')
 const ledgerNotifications = require('./ledgerNotifications')
 const ledgerVideoCache = require('../../common/cache/ledgerVideoCache')
+const updater = require('../../updater')
+const promoCodeFirstRunStorage = require('../../promoCodeFirstRunStorage')
+const appUrlUtil = require('../../../js/lib/appUrlUtil')
 
 // Caching
 let locationDefault = 'NOOP'
@@ -81,7 +85,6 @@ let verifiedTimeoutId = false
 let v2RulesetDB
 const v2RulesetPath = 'ledger-rulesV2.leveldb'
 const statePath = 'ledger-state.json'
-const newClientPath = 'ledger-newstate.json'
 
 // Definitions
 const clientOptions = {
@@ -93,6 +96,27 @@ const clientOptions = {
   createWorker: electron.app.createWorker,
   version: 'v2',
   environment: process.env.LEDGER_ENVIRONMENT || 'production'
+}
+
+var platforms = {
+  'darwin': 'osx',
+  'win32x64': 'winx64',
+  'win32ia32': 'winia32',
+  'linux': 'linux'
+}
+
+let platform = platforms[process.platform]
+
+if (process.platform === 'win32') {
+  platform = platforms[process.platform + process.arch]
+}
+
+let referralServer = 'https://laptop-updates-staging.herokuapp.com'
+let referralAPI = 'key'
+
+if (clientOptions.environment === 'production') {
+  referralServer = 'https://laptop-updates.brave.com'
+  referralAPI = config.referralAPI || process.env.LEDGER_REFERRAL_API_KEY || ''
 }
 
 const fileTypes = {
@@ -149,11 +173,12 @@ const paymentPresent = (state, tabId, present) => {
     delete ledgerPaymentsPresent[tabId]
   }
 
-  if (Object.keys(ledgerPaymentsPresent).length > 0 && getSetting(settings.PAYMENTS_ENABLED)) {
+  if (getSetting(settings.PAYMENTS_ENABLED) && present) {
     if (!balanceTimeoutId) {
       module.exports.getBalance(state)
     }
 
+    appActions.onPromotionGet()
     getPublisherTimestamp(true)
   } else if (balanceTimeoutId) {
     clearTimeout(balanceTimeoutId)
@@ -204,7 +229,7 @@ const onBootStateFile = (state) => {
 
   try {
     clientprep()
-    client = ledgerClient(null, underscore.extend({roundtrip: roundtrip}, clientOptions), null)
+    client = ledgerClient(null, underscore.extend({roundtrip: module.exports.roundtrip}, clientOptions), null)
 
     getPublisherTimestamp()
   } catch (ex) {
@@ -226,7 +251,7 @@ const onBootStateFile = (state) => {
 }
 
 const promptForRecoveryKeyFile = () => {
-  const defaultRecoveryKeyFilePath = path.join(electron.app.getPath('userData'), '/brave_wallet_recovery.txt')
+  const defaultRecoveryKeyFilePath = path.join(electron.app.getPath('downloads'), '/brave_wallet_recovery.txt')
   if (process.env.SPECTRON) {
     // skip the dialog for tests
     console.log(`for test, trying to recover keys from path: ${defaultRecoveryKeyFilePath}`)
@@ -240,7 +265,7 @@ const promptForRecoveryKeyFile = () => {
       extensions: [['txt']],
       includeAllFiles: false
     }, (files) => {
-      return (files && files.length ? files[0] : null)
+      appActions.onFileRecoveryKeys((files && files.length ? files[0] : null))
     })
   }
 }
@@ -291,6 +316,7 @@ const getPublisherData = (result, scorekeeper) => {
     verified: result.options.verified || false,
     exclude: result.options.exclude || false,
     publisherKey: result.publisherKey,
+    providerName: result.providerName,
     siteName: result.publisherKey,
     views: result.visits,
     duration: duration,
@@ -393,20 +419,40 @@ const synopsisNormalizer = (state, changedPublisher, returnState = true, prune =
     state = module.exports.pruneSynopsis(state)
   }
 
-  let results = []
-  let publishers = ledgerState.getPublishers(state)
-  for (let item of publishers) {
-    const publisherKey = item[0]
-    let publisher = item[1]
+  let publishers = ledgerState.getPublishers(state).toJS()
+  let pinnedTotal = 0
+  let unPinnedTotal = 0
+  Object.keys(publishers).forEach(publisherKey => {
+    let publisher = publishers[publisherKey]
+
     if (!ledgerUtil.visibleP(state, publisherKey)) {
-      continue
+      return
     }
 
-    publisher = publisher.set('publisherKey', publisherKey)
-    results.push(publisher.toJS())
-  }
+    publisher.publisherKey = publisherKey
 
-  if (results.length === 0) {
+    if (publisher.pinPercentage && publisher.pinPercentage > 0) {
+      // pinned
+      pinnedTotal += publisher.pinPercentage
+      dataPinned.push(getPublisherData(publisher, scorekeeper))
+    } else if (ledgerUtil.stickyP(state, publisher.publisherKey)) {
+      // unpinned
+      unPinnedTotal += publisher.scores[scorekeeper]
+      dataUnPinned.push(publisher)
+    } else {
+      // excluded
+      let newPublisher = getPublisherData(publisher, scorekeeper)
+      newPublisher.percentage = 0
+      newPublisher.weight = 0
+      dataExcluded.push(newPublisher)
+    }
+  })
+
+  if (
+    dataPinned.length === 0 &&
+    dataUnPinned.length === 0 &&
+    dataExcluded.length === 0
+  ) {
     if (returnState) {
       return ledgerState.saveAboutSynopsis(state, Immutable.List())
     }
@@ -414,49 +460,28 @@ const synopsisNormalizer = (state, changedPublisher, returnState = true, prune =
     return []
   }
 
-  results = underscore.sortBy(results, (entry) => -entry.scores[scorekeeper])
-
-  let pinnedTotal = 0
-  let unPinnedTotal = 0
-  // move publisher to the correct array and get totals
-  results.forEach((result) => {
-    if (result.pinPercentage && result.pinPercentage > 0) {
-      // pinned
-      pinnedTotal += result.pinPercentage
-      dataPinned.push(getPublisherData(result, scorekeeper))
-    } else if (ledgerUtil.stickyP(state, result.publisherKey)) {
-      // unpinned
-      unPinnedTotal += result.scores[scorekeeper]
-      dataUnPinned.push(result)
-    } else {
-      // excluded
-      let publisher = getPublisherData(result, scorekeeper)
-      publisher.percentage = 0
-      publisher.weight = 0
-      dataExcluded.push(publisher)
-    }
-  })
-
   // round if over 100% of pinned publishers
   if (pinnedTotal > 100) {
     if (changedPublisher) {
-      let changedObject = dataPinned.filter(publisher => publisher.publisherKey === changedPublisher)[0] // TOOD optimize to find from filter
-      const setOne = changedObject.pinPercentage > (100 - dataPinned.length - 1)
+      let changedObject = dataPinned.find(publisher => publisher.publisherKey === changedPublisher)
+      if (changedObject) {
+        const setOne = changedObject.pinPercentage > (100 - dataPinned.length - 1)
 
-      if (setOne) {
-        changedObject.pinPercentage = 100 - dataPinned.length + 1
-        changedObject.weight = changedObject.pinPercentage
+        if (setOne) {
+          changedObject.pinPercentage = 100 - dataPinned.length + 1
+          changedObject.weight = changedObject.pinPercentage
+        }
+
+        const pinnedRestTotal = pinnedTotal - changedObject.pinPercentage
+        dataPinned = dataPinned.filter(publisher => publisher.publisherKey !== changedPublisher)
+        dataPinned = module.exports.normalizePinned(dataPinned, pinnedRestTotal, (100 - changedObject.pinPercentage), setOne)
+        dataPinned = module.exports.roundToTarget(dataPinned, (100 - changedObject.pinPercentage), 'pinPercentage')
+
+        dataPinned.push(changedObject)
       }
-
-      const pinnedRestTotal = pinnedTotal - changedObject.pinPercentage
-      dataPinned = dataPinned.filter(publisher => publisher.publisherKey !== changedPublisher)
-      dataPinned = normalizePinned(dataPinned, pinnedRestTotal, (100 - changedObject.pinPercentage), setOne)
-      dataPinned = roundToTarget(dataPinned, (100 - changedObject.pinPercentage), 'pinPercentage')
-
-      dataPinned.push(changedObject)
     } else {
-      dataPinned = normalizePinned(dataPinned, pinnedTotal, 100)
-      dataPinned = roundToTarget(dataPinned, 100, 'pinPercentage')
+      dataPinned = module.exports.normalizePinned(dataPinned, pinnedTotal, 100)
+      dataPinned = module.exports.roundToTarget(dataPinned, 100, 'pinPercentage')
     }
 
     dataUnPinned = dataUnPinned.map((result) => {
@@ -470,8 +495,18 @@ const synopsisNormalizer = (state, changedPublisher, returnState = true, prune =
     state = ledgerState.changePinnedValues(state, dataPinned)
   } else if (dataUnPinned.length === 0 && pinnedTotal < 100) {
     // when you don't have any unpinned sites and pinned total is less then 100 %
-    dataPinned = normalizePinned(dataPinned, pinnedTotal, 100, false)
-    dataPinned = roundToTarget(dataPinned, 100, 'pinPercentage')
+    let changedObject = dataPinned.find(publisher => publisher.publisherKey === changedPublisher)
+    if (changedObject) {
+      const pinnedRestTotal = pinnedTotal - changedObject.pinPercentage
+      const restPercentage = 100 - changedObject.pinPercentage
+      dataPinned = dataPinned.filter(publisher => publisher.publisherKey !== changedPublisher)
+      dataPinned = module.exports.normalizePinned(dataPinned, pinnedRestTotal, restPercentage)
+      dataPinned = module.exports.roundToTarget(dataPinned, restPercentage, 'pinPercentage')
+      dataPinned.push(changedObject)
+    } else {
+      dataPinned = module.exports.normalizePinned(dataPinned, pinnedTotal, 100, false)
+      dataPinned = module.exports.roundToTarget(dataPinned, 100, 'pinPercentage')
+    }
 
     // sync app store
     state = ledgerState.changePinnedValues(state, dataPinned)
@@ -486,7 +521,7 @@ const synopsisNormalizer = (state, changedPublisher, returnState = true, prune =
     })
 
     // normalize unpinned values
-    dataUnPinned = roundToTarget(dataUnPinned, (100 - pinnedTotal), 'percentage')
+    dataUnPinned = module.exports.roundToTarget(dataUnPinned, (100 - pinnedTotal), 'percentage')
   }
 
   const newData = dataPinned.concat(dataUnPinned, dataExcluded)
@@ -552,7 +587,7 @@ const inspectP = (db, path, publisher, property, key, callback) => {
 }
 
 // TODO rename function name
-const verifiedP = (state, publisherKey, callback) => {
+const verifiedP = (state, publisherKey, callback, lastUpdate) => {
   const clientCallback = (err, result) => {
     if (err) {
       console.error(`Error verifying publisher ${publisherKey}: `, err.toString())
@@ -561,7 +596,7 @@ const verifiedP = (state, publisherKey, callback) => {
 
     if (callback) {
       if (result) {
-        callback(null, result)
+        callback(null, result, lastUpdate)
       } else {
         callback(err, {})
       }
@@ -712,6 +747,47 @@ const saveVisit = (state, publisherKey, options) => {
   return state
 }
 
+const onVerifiedPStatus = (error, result, lastUpdate) => {
+  if (error || result == null) {
+    return
+  }
+
+  if (!Array.isArray(result)) {
+    result = [result]
+  }
+
+  if (result.length === 0) {
+    return
+  }
+
+  const data = result.reduce((publishers, item) => {
+    if (item.err) {
+      return publishers
+    }
+
+    const publisherKey = item.publisher
+    let verified = false
+    if (item && item.properties) {
+      verified = !!item.properties.verified
+      savePublisherOption(publisherKey, 'verified', verified)
+    }
+
+    savePublisherOption(publisherKey, 'verifiedTimestamp', lastUpdate)
+
+    publishers.push({
+      publisherKey,
+      verified,
+      verifiedTimestamp: lastUpdate
+    })
+
+    return publishers
+  }, [])
+
+  if (data && data.length > 0) {
+    appActions.onPublishersOptionUpdate(data)
+  }
+}
+
 const checkVerifiedStatus = (state, publisherKeys, publisherTimestamp) => {
   if (publisherKeys == null) {
     return state
@@ -721,35 +797,22 @@ const checkVerifiedStatus = (state, publisherKeys, publisherTimestamp) => {
     publisherKeys = [publisherKeys]
   }
 
-  const checkKeys = []
   const lastUpdate = parseInt(publisherTimestamp || ledgerState.getLedgerValue(state, 'publisherTimestamp'))
-
-  publisherKeys.forEach(key => {
+  const checkKeys = publisherKeys.reduce((init, key) => {
     const lastPublisherUpdate = parseInt(ledgerState.getPublisherOption(state, key, 'verifiedTimestamp') || 0)
 
     if (lastUpdate > lastPublisherUpdate) {
-      checkKeys.push(key)
+      init.push(key)
     }
-  })
+
+    return init
+  }, [])
 
   if (checkKeys.length === 0) {
     return state
   }
 
-  state = module.exports.verifiedP(state, checkKeys, (error, result) => {
-    if (!error) {
-      const publisherKey = result.publisher
-
-      if (result && result.properties && result.properties) {
-        const verified = !!result.properties.verified
-        appActions.onPublisherOptionUpdate(publisherKey, 'verified', verified)
-        savePublisherOption(publisherKey, 'verified', verified)
-      }
-
-      appActions.onPublisherOptionUpdate(publisherKey, 'verifiedTimestamp', lastUpdate)
-      savePublisherOption(publisherKey, 'verifiedTimestamp', lastUpdate)
-    }
-  })
+  state = module.exports.verifiedP(state, checkKeys, onVerifiedPStatus, lastUpdate)
 
   return state
 }
@@ -785,6 +848,17 @@ const addNewLocation = (state, location, tabId = tabState.TAB_ID_NONE, keepInfo 
   // Update to the latest view
   currentUrl = location
   currentTimestamp = new Date().getTime()
+  return state
+}
+
+const onFavIconReceived = (state, publisherKey, blob) => {
+  if (publisherKey == null) {
+    return state
+  }
+
+  state = ledgerState.setPublishersProp(state, publisherKey, 'faviconURL', blob)
+  module.exports.savePublisherData(publisherKey, 'faviconURL', blob)
+
   return state
 }
 
@@ -859,7 +933,7 @@ const fetchFavIcon = (publisherKey, url, redirects) => {
       underscore.keys(fileTypes).forEach((fileType) => {
         if (matchP) return
         if (
-          prefix.length >= fileTypes[fileType].length ||
+          prefix.length < fileTypes[fileType].length ||
           fileTypes[fileType].compare(prefix, 0, fileTypes[fileType].length) !== 0
         ) {
           return
@@ -874,10 +948,6 @@ const fetchFavIcon = (publisherKey, url, redirects) => {
     } else if (tail > 0 && (tail + 8 >= blob.length)) return
 
     appActions.onFavIconReceived(publisherKey, blob)
-
-    if (synopsis.publishers && synopsis.publishers[publisherKey]) {
-      synopsis.publishers[publisherKey].faviconURL = blob
-    }
   })
 }
 
@@ -934,8 +1004,12 @@ const pageDataChanged = (state, viewData = {}, keepInfo = false) => {
       }
     }
 
-    if (!publisherKey || (publisherKey && ledgerUtil.blockedP(state, publisherKey))) {
+    if (!publisherKey || (ledgerUtil.blockedP(state, publisherKey))) {
       publisherKey = null
+    }
+
+    if (publisherKey) {
+      publisher = ledgerState.getPublisher(state, publisherKey)
     }
 
     state = ledgerState.setLocationProp(state, info.get('key'), 'publisher', publisherKey)
@@ -970,7 +1044,7 @@ const pageDataChanged = (state, viewData = {}, keepInfo = false) => {
 }
 
 const backupKeys = (state, backupAction) => {
-  const date = moment().format('L')
+  const date = format(new Date(), 'MM/DD/YYYY')
   const passphrase = ledgerState.getInfoProp(state, 'passphrase')
 
   const messageLines = [
@@ -983,39 +1057,54 @@ const backupKeys = (state, backupAction) => {
   ]
 
   const message = messageLines.join(os.EOL)
-  const filePath = path.join(electron.app.getPath('userData'), '/brave_wallet_recovery.txt')
+  const defaultFilePath = path.join(electron.app.getPath('downloads'), '/brave_wallet_recovery.txt')
 
   const fs = require('fs')
-  fs.writeFile(filePath, message, (err) => {
-    if (err) {
-      console.error(err)
-    } else {
-      tabs.create({url: fileUrl(filePath)}, (webContents) => {
-        if (backupAction === 'print') {
-          webContents.print({silent: false, printBackground: false})
-        } else {
-          webContents.downloadURL(fileUrl(filePath), true)
-        }
-      })
+
+  if (backupAction === 'print') {
+    tabs.create({url: appUrlUtil.aboutUrls.get('about:printkeys')})
+    return
+  }
+
+  const dialog = electron.dialog
+  const BrowserWindow = electron.BrowserWindow
+
+  dialog.showDialog(BrowserWindow.getFocusedWindow(), {
+    type: 'select-saveas-file',
+    defaultPath: defaultFilePath,
+    extensions: [['txt']],
+    includeAllFiles: false
+  }, (files) => {
+    const file = files && files.length ? files[0] : null
+    if (file) {
+      try {
+        fs.writeFileSync(file, message)
+      } catch (e) {
+        console.error('Problem saving backup keys')
+      }
     }
   })
+}
+
+const fileRecoveryKeys = (state, recoveryKeyFile) => {
+  if (!recoveryKeyFile) {
+    // user canceled from dialog, we abort without error
+    return state
+  }
+
+  const result = loadKeysFromBackupFile(state, recoveryKeyFile)
+  const recoveryKey = result.recoveryKey || ''
+  state = result.state
+
+  return recoverKeys(state, false, recoveryKey)
 }
 
 const recoverKeys = (state, useRecoveryKeyFile, key) => {
   let recoveryKey
 
   if (useRecoveryKeyFile) {
-    let recoveryKeyFile = promptForRecoveryKeyFile()
-    if (!recoveryKeyFile) {
-      // user canceled from dialog, we abort without error
-      return state
-    }
-
-    if (recoveryKeyFile) {
-      const result = loadKeysFromBackupFile(state, recoveryKeyFile)
-      recoveryKey = result.recoveryKey || ''
-      state = result.state
-    }
+    promptForRecoveryKeyFile()
+    return state
   }
 
   if (!recoveryKey) {
@@ -1125,12 +1214,17 @@ const initSynopsis = (state) => {
   }
 
   const publishers = ledgerState.getPublishers(state)
+
   for (let item of publishers) {
     const publisherKey = item[0]
-    excludeP(publisherKey, (unused, exclude) => {
-      appActions.onPublisherOptionUpdate(publisherKey, 'exclude', exclude)
-      savePublisherOption(publisherKey, 'exclude', exclude)
-    })
+    const publisher = item[1] || Immutable.Map()
+
+    if (!publisher.getIn(['options', 'exclude'])) {
+      excludeP(publisherKey, (unused, exclude) => {
+        appActions.onPublisherOptionUpdate(publisherKey, 'exclude', exclude)
+        savePublisherOption(publisherKey, 'exclude', exclude)
+      })
+    }
   }
 
   state = updatePublisherInfo(state)
@@ -1138,10 +1232,21 @@ const initSynopsis = (state) => {
   return state
 }
 
+const checkPromotions = () => {
+  if (promotionTimeoutId) {
+    clearInterval(promotionTimeoutId)
+  }
+
+  // get promotions
+  appActions.onPromotionGet()
+
+  promotionTimeoutId = setTimeout(() => {
+    checkPromotions()
+  }, random.randomInt({min: 20 * ledgerUtil.milliseconds.hour, max: 24 * ledgerUtil.milliseconds.hour}))
+}
+
 const enable = (state, paymentsEnabled) => {
   if (paymentsEnabled) {
-    state = checkBtcBatMigrated(state, paymentsEnabled)
-
     if (!getSetting(settings.PAYMENTS_NOTIFICATION_TRY_PAYMENTS_DISMISSED)) {
       appActions.changeSetting(settings.PAYMENTS_NOTIFICATION_TRY_PAYMENTS_DISMISSED, true)
     }
@@ -1149,19 +1254,14 @@ const enable = (state, paymentsEnabled) => {
 
   if (paymentsEnabled === getSetting(settings.PAYMENTS_ENABLED)) {
     // on start
-    if (promotionTimeoutId) {
-      clearInterval(promotionTimeoutId)
-    }
-    promotionTimeoutId = setInterval(() => {
-      appActions.onPromotionGet()
-    }, 24 * ledgerUtil.milliseconds.hour)
 
     if (togglePromotionTimeoutId) {
       clearTimeout(togglePromotionTimeoutId)
     }
+
     togglePromotionTimeoutId = setTimeout(() => {
-      appActions.onPromotionGet()
-    }, 15 * ledgerUtil.milliseconds.second)
+      checkPromotions()
+    }, random.randomInt({min: 10 * ledgerUtil.milliseconds.second, max: 15 * ledgerUtil.milliseconds.second}))
   } else if (paymentsEnabled) {
     // on toggle
     if (togglePromotionTimeoutId) {
@@ -1218,8 +1318,12 @@ const enable = (state, paymentsEnabled) => {
 }
 
 const pathName = (name) => {
+  if (!name) {
+    return null
+  }
+
   const parts = path.parse(name)
-  return path.join(electron.app.getPath('userData'), parts.name + parts.ext)
+  return path.join(electron.app.getPath('userData'), parts.dir, `${parts.name}${parts.ext}`)
 }
 
 const cacheRuleSet = (state, ruleset) => {
@@ -1309,7 +1413,7 @@ const roundtrip = (params, options, callback) => {
     : typeof params.server !== 'undefined' ? params.server
       : typeof options.server === 'string' ? urlParse(options.server) : options.server
   const binaryP = options.binaryP
-  const rawP = binaryP || options.rawP
+  const rawP = binaryP || options.rawP || options.scrapeP
 
   if (!params.method) params.method = 'GET'
   parts = underscore.extend(underscore.pick(parts, ['protocol', 'hostname', 'port']),
@@ -1362,7 +1466,7 @@ const roundtrip = (params, options, callback) => {
     if (Math.floor(response.statusCode / 100) !== 2) {
       if (params.useProxy && response.statusCode === 403) {
         params.useProxy = false
-        return roundtrip(params, options, callback)
+        return module.exports.roundtrip(params, options, callback)
       }
 
       return callback(
@@ -1423,7 +1527,7 @@ const getStateInfo = (state, parsedData) => {
   const info = parsedData.paymentInfo
   const then = new Date().getTime() - ledgerUtil.milliseconds.year
 
-  if (!parsedData.properties.wallet) {
+  if (!parsedData.properties || !parsedData.properties.wallet) {
     return state
   }
 
@@ -1432,12 +1536,7 @@ const getStateInfo = (state, parsedData) => {
   }
 
   if (parsedData.properties && parsedData.properties.wallet && parsedData.properties.wallet.keyinfo) {
-    let seed = parsedData.properties.wallet.keyinfo.seed
-    if (!(seed instanceof Uint8Array)) {
-      seed = new Uint8Array(Object.values(seed))
-    }
-
-    parsedData.properties.wallet.keyinfo.seed = seed
+    parsedData.properties.wallet.keyinfo.seed = uintKeySeed(parsedData.properties.wallet.keyinfo.seed)
   }
 
   const newInfo = {
@@ -1629,7 +1728,8 @@ const onWalletProperties = (state, body) => {
     if (amount != null && rate) {
       const bigProbi = new BigNumber(probi.toString()).dividedBy('1e18')
       const bigRate = new BigNumber(rate.toString())
-      const converted = bigProbi.times(bigRate).toFixed(2)
+      const converted = bigProbi.times(bigRate).toNumber()
+
       state = ledgerState.setInfoProp(state, 'converted', converted)
     }
   }
@@ -1724,10 +1824,13 @@ const uintKeySeed = (currentSeed) => {
     return currentSeed
   }
 
+  if (currentSeed instanceof Object) {
+    return new Uint8Array(Object.values(currentSeed))
+  }
+
   try {
     currentSeed.toJSON()
-    const seed = new Uint8Array(Object.values(currentSeed))
-    currentSeed = seed
+    return new Uint8Array(Object.values(currentSeed))
   } catch (err) { }
 
   return currentSeed
@@ -1834,25 +1937,60 @@ const onCallback = (state, result, delayTime) => {
   // persist the new ledger state
   muonWriter(statePath, regularResults)
 
-  // delete the temp file used during transition (if it still exists)
-  if (client && client.options && client.options.version === 'v2') {
-    const fs = require('fs')
-    fs.access(pathName(newClientPath), fs.FF_OK, (err) => {
-      if (err) {
-        return
-      }
-      fs.unlink(pathName(newClientPath), (err) => {
-        if (err) console.error('unlink error: ' + err.toString())
-      })
-    })
-  }
-
   run(state, delayTime)
 
   return state
 }
 
+const onReferralCodeRead = (code) => {
+  if (!code) {
+    return
+  }
+
+  code = code.trim()
+
+  if (code.length > 0) {
+    module.exports.roundtrip({
+      server: referralServer,
+      method: 'PUT',
+      path: '/promo/initialize/nonua',
+      payload: {
+        api_key: referralAPI,
+        referral_code: code,
+        platform: platform
+      }
+    }, {}, onReferralInit)
+  }
+}
+
+const onReferralInit = (err, response, body) => {
+  if (err) {
+    if (clientOptions.verboseP) {
+      console.error(err)
+    }
+    return
+  }
+
+  if (body && body.download_id) {
+    appActions.onReferralCodeRead(body.download_id, body.referral_code)
+    promoCodeFirstRunStorage
+      .removePromoCode()
+      .catch(error => {
+        if (clientOptions.verboseP) {
+          console.error('read error: ' + error.toString())
+        }
+      })
+    return
+  }
+
+  if (clientOptions.verboseP) {
+    console.error(`Referral check was not successful ${body}`)
+  }
+}
+
 const initialize = (state, paymentsEnabled) => {
+  let fs
+
   if (!v2RulesetDB) v2RulesetDB = levelUp(pathName(v2RulesetPath))
   state = enable(state, paymentsEnabled)
 
@@ -1875,9 +2013,21 @@ const initialize = (state, paymentsEnabled) => {
     }
   }
 
+  if (updateState.getUpdateProp(state, 'referralDownloadId') == null) {
+    promoCodeFirstRunStorage
+      .readFirstRunPromoCode()
+      .then((code) => {
+        onReferralCodeRead(code)
+      })
+      .catch(error => {
+        if (clientOptions.verboseP) {
+          console.error('read error: ' + error.toString())
+        }
+      })
+  }
+
   if (!paymentsEnabled) {
     client = null
-    newClient = false
     return ledgerState.resetInfo(state, true)
   }
 
@@ -1896,7 +2046,7 @@ const initialize = (state, paymentsEnabled) => {
   state = cacheRuleSet(state, ruleset)
 
   try {
-    const fs = require('fs')
+    if (!fs) fs = require('fs')
     fs.access(pathName(statePath), fs.FF_OK, (err) => {
       if (err) {
         return
@@ -1933,6 +2083,22 @@ const getContributionAmount = (state) => {
 }
 
 const onInitRead = (state, parsedData) => {
+  const isBTC = parsedData &&
+    parsedData.properties &&
+    parsedData.properties.wallet &&
+    parsedData.properties.wallet.keychains
+
+  if (isBTC) {
+    const fs = require('fs')
+    fs.renameSync(pathName(statePath), pathName('ledger-state-btc.json'))
+    state = ledgerState.resetInfo(state)
+    clientprep()
+    client = ledgerClient(null, underscore.extend({roundtrip: roundtrip}, clientOptions), null)
+    parsedData = client.state
+    getPaymentInfo(state)
+    muonWriter(statePath, parsedData)
+  }
+
   if (Array.isArray(parsedData.transactions)) {
     parsedData.transactions.sort((transaction1, transaction2) => {
       return transaction1.submissionStamp - transaction2.submissionStamp
@@ -1953,7 +2119,7 @@ const onInitRead = (state, parsedData) => {
     } catch (ex) {}
 
     client = ledgerClient(parsedData.personaId,
-      underscore.extend(parsedData.options, {roundtrip: roundtrip}, options),
+      underscore.extend(parsedData.options, {roundtrip: module.exports.roundtrip}, options),
       parsedData)
 
     getPublisherTimestamp(true)
@@ -2226,6 +2392,31 @@ const migration = (state) => {
   return state
 }
 
+const setPublishersOptions = (state, publishersArray) => {
+  if (!publishersArray || publishersArray.size === 0) {
+    return state
+  }
+
+  publishersArray.forEach(publisherData => {
+    const publisherKey = publisherData.get('publisherKey')
+
+    if (publisherKey == null) {
+      return state
+    }
+
+    for (const data of publisherData) {
+      const prop = data[0]
+      const value = data[1]
+      if (prop !== 'publisherKey') {
+        state = ledgerState.setPublisherOption(state, publisherKey, prop, value)
+        module.exports.savePublisherOption(publisherKey, prop, value)
+      }
+    }
+  })
+
+  return state
+}
+
 // for synopsis variable handling only
 const deleteSynopsisPublisher = (publisherKey) => {
   delete synopsis.publishers[publisherKey]
@@ -2236,160 +2427,35 @@ const saveOptionSynopsis = (prop, value) => {
 }
 
 const savePublisherOption = (publisherKey, prop, value) => {
-  if (synopsis && synopsis.publishers && synopsis.publishers[publisherKey] && synopsis.publishers[publisherKey].options) {
-    synopsis.publishers[publisherKey].options[prop] = value
+  if (!synopsis || !synopsis.publishers || !publisherKey) {
+    return
   }
+
+  if (!synopsis.publishers[publisherKey]) {
+    synopsis.publishers[publisherKey] = {}
+  }
+
+  if (!synopsis.publishers[publisherKey].options) {
+    synopsis.publishers[publisherKey].options = {}
+  }
+
+  synopsis.publishers[publisherKey].options[prop] = value
 }
 
 const savePublisherData = (publisherKey, prop, value) => {
-  if (synopsis && synopsis.publishers && synopsis.publishers[publisherKey]) {
-    synopsis.publishers[publisherKey][prop] = value
+  if (!synopsis || !synopsis.publishers || !publisherKey) {
+    return
   }
+
+  if (!synopsis.publishers[publisherKey]) {
+    synopsis.publishers[publisherKey] = {}
+  }
+
+  synopsis.publishers[publisherKey][prop] = value
 }
 
 const deleteSynopsis = () => {
   synopsis.publishers = {}
-}
-
-// fix for incorrectly persisted state (see #11585)
-const yoDawg = (stateState) => {
-  while (stateState.hasOwnProperty('state') && stateState.state.persona) {
-    stateState = stateState.state
-  }
-  return stateState
-}
-
-const checkBtcBatMigrated = (state, paymentsEnabled) => {
-  if (!paymentsEnabled) {
-    return state
-  }
-
-  // One time conversion of wallet
-  const isNewInstall = migrationState.isNewInstall(state)
-  const hasUpgradedWallet = migrationState.hasUpgradedWallet(state)
-  if (!isNewInstall && !hasUpgradedWallet) {
-    state = migrationState.setTransitionStatus(state, true)
-    module.exports.transitionWalletToBat()
-  } else {
-    state = migrationState.setTransitionStatus(state, false)
-  }
-
-  return state
-}
-
-let newClient = null
-const getNewClient = () => {
-  return newClient
-}
-
-let busyRetryCount = 0
-
-const transitionWalletToBat = () => {
-  let newPaymentId, result
-
-  if (newClient === true) return
-  clientprep()
-
-  if (!client) {
-    console.log('Client is not initialized, will try again')
-    return
-  }
-
-  // only attempt this transition if the wallet is v1
-  if (client && client.options && client.options.version !== 'v1') {
-    // older versions incorrectly marked this for transition
-    // this will clean them up (no more bouncy ball)
-    appActions.onBitcoinToBatTransitioned()
-    return
-  }
-
-  // Restore newClient from the file (if one exists)
-  if (!newClient) {
-    const fs = require('fs')
-    try {
-      fs.accessSync(pathName(newClientPath), fs.FF_OK)
-      fs.readFile(pathName(newClientPath), (error, data) => {
-        if (error) {
-          console.error(`ledger client: can't read ${newClientPath} to restore newClient`)
-          return
-        }
-        const parsedData = JSON.parse(data)
-        const state = yoDawg(parsedData)
-        newClient = ledgerClient(state.personaId,
-          underscore.extend(state.options, {roundtrip: roundtrip}, clientOptions),
-          state)
-        transitionWalletToBat()
-      })
-      return
-    } catch (err) {}
-  }
-
-  // Create new client
-  if (!newClient) {
-    try {
-      newClient = ledgerClient(null, underscore.extend({roundtrip: roundtrip}, clientOptions), null)
-      muonWriter(newClientPath, newClient.state)
-    } catch (ex) {
-      console.error('ledger client creation error(2): ', ex)
-      return
-    }
-  }
-
-  newPaymentId = newClient.getPaymentId()
-  if (!newPaymentId) {
-    newClient.sync((err, result, delayTime) => {
-      if (err) {
-        return console.error('ledger client error(3): ' + JSON.stringify(err, null, 2) + (err.stack ? ('\n' + err.stack) : ''))
-      }
-
-      if (typeof delayTime === 'undefined') delayTime = random.randomInt({ min: 1, max: 500 })
-
-      if (newClient) {
-        muonWriter(newClientPath, newClient.state)
-      }
-
-      setTimeout(() => transitionWalletToBat(), delayTime)
-    })
-    return
-  }
-
-  if (client.busyP()) {
-    if (++busyRetryCount > 3) {
-      console.log('ledger client is currently busy; transition will be retried on next launch')
-      return
-    }
-    const delayTime = random.randomInt({
-      min: ledgerUtil.milliseconds.minute,
-      max: 10 * ledgerUtil.milliseconds.minute
-    })
-    console.log('ledger client is currently busy; transition will be retried shortly (this was attempt ' + busyRetryCount + ')')
-    setTimeout(() => transitionWalletToBat(), delayTime)
-    return
-  }
-
-  appActions.onBitcoinToBatBeginTransition()
-
-  try {
-    client.transition(newPaymentId, (err, properties) => {
-      if (err || !newClient) {
-        console.error('ledger client transition error: ', err)
-      } else {
-        result = newClient.transitioned(properties)
-        client = newClient
-        newClient = true
-        // NOTE: onLedgerCallback will save latest client to disk as ledger-state.json
-        appActions.onLedgerCallback(result, random.randomInt({
-          min: ledgerUtil.milliseconds.minute,
-          max: 10 * ledgerUtil.milliseconds.minute
-        }))
-        appActions.onBitcoinToBatTransitioned()
-        ledgerNotifications.showBraveWalletUpdated()
-        getPublisherTimestamp()
-      }
-    })
-  } catch (ex) {
-    console.error('exception during ledger client transition: ', ex)
-  }
 }
 
 let currentMediaKey = null
@@ -2400,10 +2466,15 @@ const onMediaRequest = (state, xhr, type, tabId) => {
 
   const parsed = ledgerUtil.getMediaData(xhr, type)
   const mediaId = ledgerUtil.getMediaId(parsed, type)
-  const mediaKey = ledgerUtil.getMediaKey(mediaId, type)
-  let duration = ledgerUtil.getMediaDuration(parsed, type)
 
-  if (mediaId == null || duration == null || mediaKey == null) {
+  if (mediaId == null) {
+    return state
+  }
+
+  const mediaKey = ledgerUtil.getMediaKey(mediaId, type)
+  let duration = ledgerUtil.getMediaDuration(state, parsed, mediaKey, type)
+
+  if (duration == null || mediaKey == null) {
     return state
   }
 
@@ -2423,9 +2494,14 @@ const onMediaRequest = (state, xhr, type, tabId) => {
     currentMediaKey = mediaKey
   }
 
+  const stateData = ledgerUtil.generateMediaCacheData(parsed, type)
   const cache = ledgerVideoCache.getDataByVideoId(state, mediaKey)
 
   if (!cache.isEmpty()) {
+    if (!stateData.isEmpty()) {
+      state = ledgerVideoCache.mergeCacheByVideoId(state, mediaKey, stateData)
+    }
+
     const publisherKey = cache.get('publisher')
     const publisher = ledgerState.getPublisher(state, publisherKey)
     if (!publisher.isEmpty() && publisher.has('providerName')) {
@@ -2437,7 +2513,11 @@ const onMediaRequest = (state, xhr, type, tabId) => {
     }
   }
 
-  const options = underscore.extend({roundtrip: roundtrip}, clientOptions)
+  if (!stateData.isEmpty()) {
+    state = ledgerVideoCache.setCacheByVideoId(state, mediaKey, stateData)
+  }
+
+  const options = underscore.extend({roundtrip: module.exports.roundtrip}, clientOptions)
   const mediaProps = {
     mediaId,
     providerName: type
@@ -2497,10 +2577,10 @@ const onMediaPublisher = (state, mediaKey, response, duration, revisited) => {
     }
   }
 
-  synopsis.publishers[publisherKey].faviconName = faviconName
-  synopsis.publishers[publisherKey].faviconURL = faviconURL
-  synopsis.publishers[publisherKey].publisherURL = publisherURL
-  synopsis.publishers[publisherKey].providerName = providerName
+  savePublisherData(publisherKey, 'faviconName', faviconName)
+  savePublisherData(publisherKey, 'faviconURL', faviconURL)
+  savePublisherData(publisherKey, 'publisherURL', publisherURL)
+  savePublisherData(publisherKey, 'providerName', providerName)
   state = ledgerState.setPublishersProp(state, publisherKey, 'faviconName', faviconName)
   state = ledgerState.setPublishersProp(state, publisherKey, 'faviconURL', faviconURL)
   state = ledgerState.setPublishersProp(state, publisherKey, 'publisherURL', publisherURL)
@@ -2514,7 +2594,7 @@ const onMediaPublisher = (state, mediaKey, response, duration, revisited) => {
     .set('publisher', publisherKey)
 
   // Add to cache
-  state = ledgerVideoCache.setCacheByVideoId(state, mediaKey, cacheObject)
+  state = ledgerVideoCache.mergeCacheByVideoId(state, mediaKey, cacheObject)
 
   state = module.exports.saveVisit(state, publisherKey, {
     duration,
@@ -2534,7 +2614,7 @@ const getPromotion = (state) => {
   let paymentId = null
   if (!tempClient) {
     clientprep()
-    tempClient = ledgerClient(null, underscore.extend({roundtrip: roundtrip}, clientOptions), null)
+    tempClient = ledgerClient(null, underscore.extend({roundtrip: module.exports.roundtrip}, clientOptions), null)
     paymentId = ledgerState.getInfoProp(state, 'paymentId')
   }
 
@@ -2622,9 +2702,82 @@ const onPublisherTimestamp = (state, oldTimestamp, newTimestamp) => {
     return
   }
 
-  publishers.forEach((publisher, key) => {
-    module.exports.checkVerifiedStatus(state, key, newTimestamp)
-  })
+  module.exports.checkVerifiedStatus(state, Array.from(publishers.keys()), newTimestamp)
+}
+
+const checkReferralActivity = (state) => {
+  const downloadId = updateState.getUpdateProp(state, 'referralDownloadId')
+
+  if (!downloadId) {
+    updater.checkForUpdate(false, true)
+    return state
+  }
+
+  const timestamp = updateState.getUpdateProp(state, 'referralAttemptTimestamp') || 0
+  const count = updateState.getUpdateProp(state, 'referralAttemptCount') || 0
+
+  if (count >= 30) {
+    if (clientOptions.verboseP) {
+      console.log('I tried 30 times, but now I need to stop trying. (Referral program)')
+    }
+    state = updateState.deleteUpdateProp(state, 'referralAttemptTimestamp')
+    state = updateState.deleteUpdateProp(state, 'referralAttemptCount')
+    state = updateState.deleteUpdateProp(state, 'referralDownloadId')
+    updater.checkForUpdate(false, true)
+    return state
+  }
+
+  const time = new Date().getTime()
+  if (time - timestamp >= ledgerUtil.milliseconds.hour * 24) {
+    state = updateState.setUpdateProp(state, 'referralAttemptCount', count + 1)
+    state = updateState.setUpdateProp(state, 'referralAttemptTimestamp', time)
+
+    module.exports.roundtrip({
+      server: referralServer,
+      method: 'PUT',
+      path: '/promo/activity',
+      payload: {
+        download_id: downloadId,
+        api_key: referralAPI
+      }
+    }, {}, activityRoundTrip)
+  } else {
+    updater.checkForUpdate(false, true)
+  }
+
+  return state
+}
+
+const referralCheck = (state) => {
+  const installTime = state.get('firstRunTimestamp')
+  const period = parseInt(process.env.LEDGER_REFERRAL_DELETE_TIME || (ledgerUtil.milliseconds.day * 90))
+
+  if (new Date().getTime() >= installTime + period) {
+    state = updateState.deleteUpdateProp(state, 'referralPromoCode')
+  }
+
+  return state
+}
+
+const activityRoundTrip = (err, response, body) => {
+  if (err) {
+    if (clientOptions.verboseP) {
+      console.error(err)
+    }
+    updater.checkForUpdate(false, true)
+    return
+  }
+
+  if (body && body.finalized) {
+    appActions.onReferralActivity()
+    return
+  }
+
+  if (clientOptions.verboseP) {
+    console.log('Referral is still not ready, please wait at least 30days')
+  }
+
+  updater.checkForUpdate(false, true)
 }
 
 const getMethods = () => {
@@ -2657,11 +2810,11 @@ const getMethods = () => {
     migration,
     onInitRead,
     deleteSynopsis,
-    transitionWalletToBat,
-    getNewClient,
+    normalizePinned,
+    roundToTarget,
+    onFavIconReceived,
     savePublisherData,
     pruneSynopsis,
-    checkBtcBatMigrated,
     onMediaRequest,
     onMediaPublisher,
     saveVisit,
@@ -2669,9 +2822,14 @@ const getMethods = () => {
     claimPromotion,
     onPromotionResponse,
     getBalance,
+    fileRecoveryKeys,
     getPromotion,
     onPublisherTimestamp,
-    checkVerifiedStatus
+    checkVerifiedStatus,
+    checkReferralActivity,
+    setPublishersOptions,
+    referralCheck,
+    roundtrip
   }
 
   let privateMethods = {}
@@ -2680,7 +2838,6 @@ const getMethods = () => {
     privateMethods = {
       enable,
       addSiteVisit,
-      checkBtcBatMigrated,
       clearVisitsByPublisher: function () {
         visitsByPublisher = {}
       },
@@ -2690,9 +2847,6 @@ const getMethods = () => {
       getSynopsis: () => synopsis,
       setSynopsis: (data) => {
         synopsis = data
-      },
-      resetNewClient: () => {
-        newClient = false
       },
       getClient: () => {
         return client
@@ -2705,14 +2859,18 @@ const getMethods = () => {
       },
       getCurrentMediaKey: (key) => currentMediaKey,
       synopsisNormalizer,
-      roundtrip,
       observeTransactions,
       onWalletRecovery,
       getStateInfo,
       lockInContributionAmount,
       callback,
       uintKeySeed,
-      loadKeysFromBackupFile
+      loadKeysFromBackupFile,
+      activityRoundTrip,
+      pathName,
+      onReferralInit,
+      onReferralCodeRead,
+      onVerifiedPStatus
     }
   }
 

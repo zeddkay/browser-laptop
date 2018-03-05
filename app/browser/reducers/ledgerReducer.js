@@ -13,7 +13,7 @@ const settings = require('../../../js/constants/settings')
 // State
 const ledgerState = require('../../common/state/ledgerState')
 const pageDataState = require('../../common/state/pageDataState')
-const migrationState = require('../../common/state/migrationState')
+const updateState = require('../../common/state/updateState')
 
 // Utils
 const ledgerApi = require('../../browser/api/ledger')
@@ -37,6 +37,7 @@ const ledgerReducer = (state, action, immutableAction) => {
       {
         state = ledgerApi.migration(state)
         state = ledgerApi.init(state)
+        state = ledgerApi.referralCheck(state)
         break
       }
     case appConstants.APP_BACKUP_KEYS:
@@ -51,6 +52,11 @@ const ledgerReducer = (state, action, immutableAction) => {
           action.get('useRecoveryKeyFile'),
           action.get('recoveryKey')
         )
+        break
+      }
+    case appConstants.APP_ON_FILE_RECOVERY_KEYS:
+      {
+        state = ledgerApi.fileRecoveryKeys(state, action.get('file'))
         break
       }
     case appConstants.APP_SHUTTING_DOWN:
@@ -199,7 +205,7 @@ const ledgerReducer = (state, action, immutableAction) => {
       }
     case appConstants.APP_ON_FAVICON_RECEIVED:
       {
-        state = ledgerState.setPublishersProp(state, action.get('publisherKey'), 'faviconURL', action.get('blob'))
+        state = ledgerApi.onFavIconReceived(state, action.get('publisherKey'), action.get('blob'))
         state = ledgerApi.updatePublisherInfo(state)
         break
       }
@@ -220,13 +226,14 @@ const ledgerReducer = (state, action, immutableAction) => {
         state = ledgerState.setPublisherOption(state, key, prop, value)
         break
       }
+    case appConstants.APP_ON_PUBLISHERS_OPTION_UPDATE:
+      {
+        state = ledgerApi.setPublishersOptions(state, action.get('publishersArray'))
+        break
+      }
     case appConstants.APP_ON_LEDGER_WALLET_CREATE:
       {
         ledgerApi.boot()
-        if (ledgerApi.getNewClient() === null) {
-          state = migrationState.setConversionTimestamp(state, new Date().getTime())
-          state = migrationState.setTransitionStatus(state, false)
-        }
         break
       }
     case appConstants.APP_ON_BOOT_STATE_FILE:
@@ -298,22 +305,6 @@ const ledgerReducer = (state, action, immutableAction) => {
     case appConstants.APP_ON_LEDGER_INIT_READ:
       {
         state = ledgerApi.onInitRead(state, action.parsedData)
-        break
-      }
-    case appConstants.APP_ON_BTC_TO_BAT_NOTIFIED:
-      {
-        state = migrationState.setNotifiedTimestamp(state, new Date().getTime())
-        break
-      }
-    case appConstants.APP_ON_BTC_TO_BAT_BEGIN_TRANSITION:
-      {
-        state = migrationState.setTransitionStatus(state, true)
-        break
-      }
-    case appConstants.APP_ON_BTC_TO_BAT_TRANSITIONED:
-      {
-        state = migrationState.setConversionTimestamp(state, new Date().getTime())
-        state = migrationState.setTransitionStatus(state, false)
         break
       }
     case appConstants.APP_ON_LEDGER_QR_GENERATED:
@@ -465,6 +456,29 @@ const ledgerReducer = (state, action, immutableAction) => {
     case appConstants.APP_ON_PROMOTION_CLOSE:
       {
         state = ledgerState.setPromotionProp(state, 'promotionStatus', null)
+        break
+      }
+    case appConstants.APP_ON_REFERRAL_CODE_READ:
+      {
+        state = updateState.setUpdateProp(state, 'referralDownloadId', action.get('downloadId'))
+        state = updateState.setUpdateProp(state, 'referralPromoCode', action.get('promoCode'))
+        break
+      }
+    case appConstants.APP_ON_REFERRAL_CODE_FAIL:
+      {
+        state = updateState.setUpdateProp(state, 'referralDownloadId', false)
+        break
+      }
+    case appConstants.APP_CHECK_REFERRAL_ACTIVITY:
+      {
+        state = ledgerApi.checkReferralActivity(state)
+        break
+      }
+    case appConstants.APP_ON_REFERRAL_ACTIVITY:
+      {
+        state = updateState.setUpdateProp(state, 'referralTimestamp', new Date().getTime())
+        state = updateState.deleteUpdateProp(state, 'referralAttemptTimestamp')
+        state = updateState.deleteUpdateProp(state, 'referralAttemptCount')
         break
       }
     case appConstants.APP_ON_LEDGER_MEDIA_PUBLISHER:

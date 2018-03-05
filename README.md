@@ -10,6 +10,7 @@
 [![Tab Tests](https://badges.herokuapp.com/travis/brave/browser-laptop?env=TEST_DIR=tab-components&label=tab-components-tests)](https://travis-ci.org/brave/browser-laptop)
 [![codecov.io](https://codecov.io/github/brave/browser-laptop/coverage.svg?branch=master)](https://codecov.io/gh/brave/browser-laptop?branch=master)
 [![JavaScript Style Guide](https://img.shields.io/badge/code_style-standard-brightgreen.svg)](https://standardjs.com)
+[![Open Source Helpers](https://www.codetriage.com/brave/browser-laptop/badges/users.svg)](https://www.codetriage.com/brave/browser-laptop)
 
 # Brave Browser
 
@@ -72,6 +73,14 @@ dnf install rpm-build
 dnf group install "Development Tools" "C Development Tools and Libraries"
 ````
 
+#### On Solus
+
+````
+sudo eopkg install -c system.devel
+sudo eopkg install gconf
+````
+
+
 ### Installation
 
 After installing the prerequisites:
@@ -95,7 +104,7 @@ After installing the prerequisites:
 
         npm install
 
-Instead of `npm install` you may also install with [yarn](https://github.com/yarnpkg/yarn).
+Instead of `npm install` you may also install with [yarn](https://github.com/yarnpkg/yarn) running `yarn install`.
 
 ### Troubleshooting
 

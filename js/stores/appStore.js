@@ -23,7 +23,6 @@ const path = require('path')
 const diff = require('immutablediff')
 const debounce = require('../lib/debounce')
 const autofill = require('../../app/autofill')
-const nativeImage = require('../../app/nativeImage')
 const filtering = require('../../app/filtering')
 const basicAuth = require('../../app/browser/basicAuth')
 const webtorrent = require('../../app/browser/webtorrent')
@@ -37,7 +36,7 @@ const urlUtil = require('../lib/urlutil')
 const buildConfig = require('../constants/buildConfig')
 
 // state helpers
-const {makeImmutable} = require('../../app/common/state/immutableUtil')
+const {makeImmutable, findNullKeyPaths} = require('../../app/common/state/immutableUtil')
 const basicAuthState = require('../../app/common/state/basicAuthState')
 const extensionState = require('../../app/common/state/extensionState')
 const aboutNewTabState = require('../../app/common/state/aboutNewTabState')
@@ -81,8 +80,27 @@ class AppStore extends EventEmitter {
 
   emitChanges () {
     if (this.lastEmittedState && this.lastEmittedState !== appState) {
-      const d = diff(this.lastEmittedState, appState)
-      if (!d.isEmpty()) {
+      let d
+      try {
+        d = diff(this.lastEmittedState, appState)
+      } catch (e) {
+        console.error('Error getting a diff from latest state.')
+        // one possible reason immutablediff can throw an error
+        // is due to null keys, so let's log any that we find
+        const nullKeyPaths = findNullKeyPaths(appState)
+        const error = (typeof e === 'object')
+          ? e
+          : (typeof e === 'string')
+            ? new Error(e)
+            : new Error()
+        for (let keyPath of nullKeyPaths) {
+          keyPath = keyPath.map(key => key === null ? 'null' : key)
+          const message = ` State path had null entry! Path was: [${keyPath.join(', ')}].`
+          error.message += message
+        }
+        throw error
+      }
+      if (d && !d.isEmpty()) {
         BrowserWindow.getAllWindows().forEach((wnd) => {
           if (wnd.webContents && !wnd.webContents.isDestroyed()) {
             wnd.webContents.send(messages.APP_STATE_CHANGE, { stateDiff: d.toJS() })
@@ -251,9 +269,6 @@ const handleAppAction = (action) => {
       appDispatcher.shutdown()
       app.quit()
       break
-    case appConstants.APP_DATA_URL_COPIED:
-      nativeImage.copyDataURL(action.dataURL, action.html, action.text)
-      break
     case appConstants.APP_SET_DATA_FILE_ETAG:
       appState = appState.setIn([action.resourceName, 'etag'], action.etag)
       break
@@ -313,41 +328,48 @@ const handleAppAction = (action) => {
         break
       }
     case appConstants.APP_SHOW_NOTIFICATION:
-      let notifications = appState.get('notifications')
-      notifications = notifications.filterNot((notification) => {
-        let message = notification.get('message')
-        // action.detail is a regular mutable object only when running tests
-        return action.detail.get
-          ? message === action.detail.get('message')
-          : message === action.detail['message']
-      })
-
-      // Insert notification next to those with the same style, or at the end
-      let insertIndex = notifications.size
-      const style = action.detail.get
-        ? action.detail.get('options').get('style')
-        : action.detail['options']['style']
-      if (style) {
-        const styleIndex = notifications.findLastIndex((notification) => {
-          return notification.get('options').get('style') === style
+      {
+        let notifications = appState.get('notifications', Immutable.List()) || Immutable.List()
+        notifications = notifications.filterNot((notification) => {
+          let message = notification.get('message')
+          // action.detail is a regular mutable object only when running tests
+          return action.detail.get
+            ? message === action.detail.get('message')
+            : message === action.detail['message']
         })
-        if (styleIndex > -1) {
-          insertIndex = styleIndex
-        } else {
-          // Insert after the last notification with a style
-          insertIndex = notifications.findLastIndex((notification) => {
-            return typeof notification.get('options').get('style') === 'string'
-          }) + 1
+
+        // Insert notification next to those with the same style, or at the end
+        let insertIndex = notifications.size
+        const style = action.detail
+          ? action.detail.get
+            ? action.detail.get('options').get('style')
+            : action.detail['options']['style']
+          : undefined
+        if (style) {
+          const styleIndex = notifications.findLastIndex((notification) => {
+            return notification.get('options').get('style') === style
+          })
+          if (styleIndex > -1) {
+            insertIndex = styleIndex
+          } else {
+            // Insert after the last notification with a style
+            insertIndex = notifications.findLastIndex((notification) => {
+              return typeof notification.get('options').get('style') === 'string'
+            }) + 1
+          }
         }
+        notifications = notifications.insert(insertIndex, Immutable.fromJS(action.detail))
+        appState = appState.set('notifications', notifications)
+        break
       }
-      notifications = notifications.insert(insertIndex, Immutable.fromJS(action.detail))
-      appState = appState.set('notifications', notifications)
-      break
     case appConstants.APP_HIDE_NOTIFICATION:
-      appState = appState.set('notifications', appState.get('notifications').filterNot((notification) => {
-        return notification.get('message') === action.message
-      }))
-      break
+      {
+        const notifications = appState.get('notifications', Immutable.List()) || Immutable.List()
+        appState = appState.set('notifications', notifications.filterNot((notification) => {
+          return notification.get('message') === action.message
+        }))
+        break
+      }
     case appConstants.APP_TAB_CLOSE_REQUESTED:
       const tabValue = tabState.getByTabId(appState, immutableAction.get('tabId'))
       if (!tabValue) {
@@ -359,7 +381,8 @@ const handleAppAction = (action) => {
         const tabsInOrigin = tabState.getTabs(appState).find((tabValue) =>
           urlUtil.getOrigin(tabValue.get('url')) === origin && tabValue.get('tabId') !== immutableAction.get('tabId'))
         if (!tabsInOrigin) {
-          appState = appState.set('notifications', appState.get('notifications').filterNot((notification) => {
+          const notifications = appState.get('notifications', Immutable.List()) || Immutable.List()
+          appState = appState.set('notifications', notifications.filterNot((notification) => {
             return notification.get('frameOrigin') === origin
           }))
         }

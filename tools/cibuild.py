@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 import os.path
-MUON_VERSION = '5.0.1'
+MUON_VERSION = '5.0.6'
 CHROMEDRIVER_VERSION = '2.33'
 SOURCE_ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 TARGET_ARCH= os.environ['TARGET_ARCH'] if os.environ.has_key('TARGET_ARCH') else 'x64'
@@ -37,7 +37,12 @@ def run_script(script, args=[]):
   sys.stderr.write('\nRunning ' + script +'\n')
   sys.stderr.flush()
   script = os.path.join(SOURCE_ROOT, 'tools', script)
-  subprocess.check_call([sys.executable, script] + args)
+  try:
+    output = subprocess.check_output([sys.executable, script] + args, stderr=subprocess.STDOUT)
+    print output
+  except subprocess.CalledProcessError as e:
+    print e.output
+    raise e
 
 
 PLATFORM = {

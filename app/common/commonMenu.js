@@ -93,7 +93,6 @@ module.exports.newPrivateTabMenuItem = () => {
 module.exports.newPartitionedTabMenuItem = () => {
   const newPartitionedMenuItem = (partitionNumber) => ({
     label: `${locale.translation('newSessionTab')} ${partitionNumber}`,
-    accelerator: 'CmdOrCtrl+Alt+' + partitionNumber,
     click: (item, focusedWindow) => {
       ensureAtLeastOneWindow({
         partitionNumber
@@ -281,7 +280,7 @@ module.exports.submitFeedbackMenuItem = () => {
     click: function (item, focusedWindow) {
       ensureAtLeastOneWindow({
         url: communityURL
-      }, true)
+      })
     }
   }
 }

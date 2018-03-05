@@ -61,7 +61,12 @@ let generateBraveManifest = () => {
       {
         run_at: 'document_start',
         all_frames: true,
-        matches: ['https://www.washingtonpost.com/*', 'https://www.youtube.com/*', 'https://coinmarketcap.com/*'],
+        matches: [
+          'https://www.washingtonpost.com/*',
+          'https://www.youtube.com/*',
+          'https://coinmarketcap.com/*',
+          'https://www.yahoo.com/*'
+        ],
         css: [
           'content/styles/removeEmptyElements.css'
         ]
@@ -175,7 +180,13 @@ let generateBraveManifest = () => {
       }
     ],
     web_accessible_resources: [
-      'img/favicon.ico'
+      'img/favicon.ico',
+      'img/newtab/defaultTopSitesIcon/appstore.png',
+      'img/newtab/defaultTopSitesIcon/brave.ico',
+      'img/newtab/defaultTopSitesIcon/facebook.png',
+      'img/newtab/defaultTopSitesIcon/playstore.png',
+      'img/newtab/defaultTopSitesIcon/twitter.png',
+      'img/newtab/defaultTopSitesIcon/youtube.png'
     ],
     permissions: [
       'externally_connectable.all_urls', 'tabs', '<all_urls>', 'contentSettings', 'idle'
@@ -477,7 +488,7 @@ module.exports.init = () => {
     }
     if (!extensionInfo.isLoaded(extensionId) && !extensionInfo.isLoading(extensionId)) {
       extensionInfo.setState(extensionId, extensionStates.LOADING)
-      if (extensionId === config.braveExtensionId || extensionId === config.torrentExtensionId || extensionId === config.syncExtensionId) {
+      if (extensionId === config.braveExtensionId || extensionId === config.torrentExtensionId || extensionId === config.cryptoTokenExtensionId || extensionId === config.syncExtensionId) {
         session.defaultSession.extensions.load(extensionPath, manifest, manifestLocation)
         return
       }
@@ -519,6 +530,9 @@ module.exports.init = () => {
   // Manually install the braveExtension and torrentExtension
   extensionInfo.setState(config.braveExtensionId, extensionStates.REGISTERED)
   loadExtension(config.braveExtensionId, getExtensionsPath('brave'), generateBraveManifest(), 'component')
+  // Cryptotoken extension is loaded from electron_resources.pak
+  extensionInfo.setState(config.cryptoTokenExtensionId, extensionStates.REGISTERED)
+  loadExtension(config.cryptoTokenExtensionId, path.join(process.resourcesPath, 'cryptotoken'), {}, 'component')
   extensionInfo.setState(config.syncExtensionId, extensionStates.REGISTERED)
   loadExtension(config.syncExtensionId, getExtensionsPath('brave'), generateSyncManifest(), 'unpacked')
 

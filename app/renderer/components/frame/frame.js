@@ -433,13 +433,9 @@ class Frame extends React.Component {
   }
 
   addEventListeners () {
-    this.webview.addEventListener('tab-id-changed', (e) => {
-      if (this.frame.isEmpty()) {
-        return
-      }
-
-      windowActions.frameTabIdChanged(this.frame, this.props.tabId, e.tabID)
-    }, { passive: true })
+    // Webview also exposes the 'tab-id-changed' event, with e.tabID as the new tabId.
+    // We don't handle that event anymore, in favor of tab-replaced-at in the browser process.
+    // Keeping this comment here as it is not documented - petemill.
     this.webview.addEventListener('guest-ready', (e) => {
       if (this.frame.isEmpty()) {
         return
@@ -620,8 +616,17 @@ class Frame extends React.Component {
         // calling with setTimeout is an ugly hack for a race condition
         // with setTitle. We either need to delay this call until the title is
         // or add a way to update it
+        // However, it's possible that the frame could be destroyed, or in a bad
+        // way by then, so make sure we do a null check.
         setTimeout(() => {
-          appActions.addHistorySite(historyUtil.getDetailFromFrame(this.frame))
+          const siteDetail = historyUtil.getDetailFromFrame(this.frame)
+          if (siteDetail) {
+            appActions.addHistorySite(siteDetail)
+          } else if (process.env.NODE_ENV !== 'production') {
+            // log, in case we decide we want these entries to go in to the history
+            // but do not send a null entry to history as it will be rejected
+            console.error('frame: siteDetail was null when calling addHistorySite')
+          }
         }, 250)
       }
 
@@ -929,6 +934,9 @@ class Frame extends React.Component {
     const transitionClassName = this.getTransitionStateClassName(this.props.transitionState)
     return <div
       data-partition={this.props.partition}
+      data-tab-id={this.props.tabId}
+      data-frame-key={this.props.frameKey}
+      data-guest-id={this.props.guestInstanceId}
       data-test-id='frameWrapper'
       data-test2-id={this.props.isActive ? 'activeFrame' : null}
       data-test3-id={this.props.isPreview ? 'previewFrame' : null}

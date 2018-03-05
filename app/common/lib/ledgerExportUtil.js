@@ -3,7 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const underscore = require('underscore')
-const moment = require('moment')
+const format = require('date-fns/format')
 
 /**
  * Filter an array of transactions by an array of viewingIds
@@ -34,10 +34,10 @@ const getTransactionsByViewingIds = (transactions, viewingIds) => {
     return transactions
   }
 
-  if (viewingIds && typeof (viewingIds) === 'string') {
+  if (typeof (viewingIds) === 'string') {
     viewingIds = [viewingIds]
   }
-  if (viewingIds && !viewingIds.length) {
+  if (!viewingIds.length) {
     viewingIds = null
   }
 
@@ -284,7 +284,7 @@ const addExportFilenamePrefixToTransactions = (transactions) => {
   return transactions.map(function (transaction) {
     const timestamp = transaction.submissionStamp
 
-    let numericDateStr = moment(new Date(timestamp)).format('YYYY-MM-DD')
+    let numericDateStr = format(new Date(timestamp), 'YYYY-MM-DD')
 
     let dateCount = (dateCountMap[numericDateStr] ? dateCountMap[numericDateStr] : 1)
     dateCountMap[numericDateStr] = dateCount + 1

@@ -115,10 +115,19 @@ function registerForBeforeRequest (session, partition) {
     }
 
     const firstPartyUrl = module.exports.getMainFrameUrl(details)
+    const url = details.url
     // this can happen if the tab is closed and the webContents is no longer available
     if (!firstPartyUrl) {
       muonCb({ cancel: true })
       return
+    }
+
+    if (!isPrivate && module.exports.isResourceEnabled('ledger') && module.exports.isResourceEnabled('ledgerMedia')) {
+      // Ledger media
+      const provider = ledgerUtil.getMediaProvider(url, firstPartyUrl, details.referrer)
+      if (provider) {
+        appActions.onLedgerMediaData(url, provider, details.tabId)
+      }
     }
 
     for (let i = 0; i < beforeRequestFilteringFns.length; i++) {
@@ -201,21 +210,12 @@ function registerForBeforeRequest (session, partition) {
       }
     }
     // Redirect to non-script version of DDG when it's blocked
-    const url = details.url
     if (details.resourceType === 'mainFrame' &&
       url.startsWith('https://duckduckgo.com/?q') &&
     module.exports.isResourceEnabled('noScript', url, isPrivate)) {
       muonCb({redirectURL: url.replace('?q=', 'html?q=')})
     } else {
       muonCb({})
-    }
-
-    if (module.exports.isResourceEnabled('ledger') && module.exports.isResourceEnabled('ledgerMedia')) {
-      // Ledger media
-      const provider = ledgerUtil.getMediaProvider(url)
-      if (provider) {
-        appActions.onLedgerMediaData(url, provider, details.tabId)
-      }
     }
   })
 }
@@ -566,6 +566,7 @@ function updateDownloadState (win, downloadId, item, state) {
 }
 
 function registerForDownloadListener (session) {
+  var repaint = false
   session.on('default-download-directory-changed', (e, newPath) => {
     if (newPath !== getSetting(settings.DOWNLOAD_DEFAULT_PATH)) {
       appActions.changeSetting(settings.DOWNLOAD_DEFAULT_PATH, newPath)
@@ -590,14 +591,16 @@ function registerForDownloadListener (session) {
     item.setPrompt(getSetting(settings.DOWNLOAD_ALWAYS_ASK) || false)
 
     const downloadId = item.getGuid()
+    repaint = true
     item.on('updated', function (e, st) {
       if (!item.getSavePath()) {
         return
       }
       const state = item.isPaused() ? downloadStates.PAUSED : downloadStates.IN_PROGRESS
       updateDownloadState(win, downloadId, item, state)
-      if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+      if (win && !win.isDestroyed() && !win.webContents.isDestroyed() && repaint) {
         win.webContents.send(messages.SHOW_DOWNLOADS_TOOLBAR)
+        repaint = false
       }
       item.on('removed', function () {
         updateElectronDownloadItem(downloadId, item, downloadStates.CANCELLED)
@@ -773,13 +776,12 @@ module.exports.isResourceEnabled = (resourceName, url, isPrivate) => {
   if (resourceName === 'pdfjs') {
     return getSetting(settings.PDFJS_ENABLED, settingsState)
   }
-  if (resourceName === 'webtorrent') {
-    return getSetting(settings.TORRENT_VIEWER_ENABLED, settingsState)
-  }
 
   if (resourceName === 'webtorrent') {
     const extension = extensionState.getExtensionById(appState, config.torrentExtensionId)
-    return extension !== undefined ? extension.get('enabled') : false
+    const torrentEnabled = getSetting(settings.TORRENT_VIEWER_ENABLED, settingsState)
+    const extensionEnabled = extension !== undefined ? extension.get('enabled') : false
+    return extensionEnabled && torrentEnabled
   }
 
   if (resourceName === 'ledger') {

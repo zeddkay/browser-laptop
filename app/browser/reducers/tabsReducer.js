@@ -24,6 +24,7 @@ const tabActionConsts = require('../../common/constants/tabAction')
 const flash = require('../../../js/flash')
 const {frameOptsFromFrame} = require('../../../js/state/frameStateUtil')
 const {isSourceAboutUrl, isTargetAboutUrl, isNavigatableAboutPage} = require('../../../js/lib/appUrlUtil')
+const {shouldDebugTabEvents} = require('../../cmdLine')
 
 const WEBRTC_DEFAULT = 'default'
 const WEBRTC_DISABLE_NON_PROXY = 'disable_non_proxied_udp'
@@ -119,6 +120,13 @@ const tabsReducer = (state, action, immutableAction) => {
       state = tabs.closeOtherTabs(state, tabId)
       break
     }
+    case appConstants.APP_DISCARD_TAB_REQUESTED: {
+      const tabId = action.get('tabId')
+      setImmediate(() => {
+        tabs.discard(tabId)
+      })
+      break
+    }
     case appConstants.APP_CREATE_TAB_REQUESTED:
       if (action.getIn(['createProperties', 'windowId']) == null) {
         const senderWindowId = action.getIn(['senderWindowId'])
@@ -142,6 +150,19 @@ const tabsReducer = (state, action, immutableAction) => {
     case appConstants.APP_TAB_UPDATED:
       state = tabState.maybeCreateTab(state, action)
       // tabs.debugTabs(state)
+      break
+    case appConstants.APP_TAB_REPLACED:
+      if (action.get('isPermanent')) {
+        if (shouldDebugTabEvents) {
+          console.log('APP_TAB_REPLACED before')
+          tabs.debugTabs(state)
+        }
+        state = tabState.replaceTabValue(state, action.get('oldTabId'), action.get('newTabValue'))
+        if (shouldDebugTabEvents) {
+          console.log('APP_TAB_REPLACED after')
+          tabs.debugTabs(state)
+        }
+      }
       break
     case appConstants.APP_TAB_CLOSE_REQUESTED:
       {
@@ -261,6 +282,11 @@ const tabsReducer = (state, action, immutableAction) => {
         tabs.inspectElement(action.get('tabId'), action.get('x'), action.get('y'))
       })
       break
+    case appConstants.APP_COPY_IMAGE:
+      setImmediate(() => {
+        tabs.copyImageAt(action.get('tabId'), action.get('x'), action.get('y'))
+      })
+      break
     case appConstants.APP_LOAD_URL_REQUESTED:
       setImmediate(() => {
         tabs.loadURL(action)
@@ -323,7 +349,7 @@ const tabsReducer = (state, action, immutableAction) => {
         break
       }
     case appConstants.APP_FRAME_CHANGED:
-      state = tabState.updateFrame(state, action)
+      state = tabState.updateFrame(state, action, shouldDebugTabEvents)
       break
     case windowConstants.WINDOW_SET_FRAME_ERROR:
       {
@@ -348,23 +374,28 @@ const tabsReducer = (state, action, immutableAction) => {
       }
       break
     case appConstants.APP_WINDOW_READY: {
+      // Get the window's id from the action or the sender
       if (!action.getIn(['createProperties', 'windowId'])) {
         const senderWindowId = action.getIn(['senderWindowId'])
         if (senderWindowId) {
           action = action.setIn(['createProperties', 'windowId'], senderWindowId)
         }
       }
-
-      const welcomeScreenProperties = {
-        'url': 'about:welcome',
-        'windowId': action.getIn(['createProperties', 'windowId'])
-      }
-
-      const shouldShowWelcomeScreen = state.getIn(['about', 'welcome', 'showOnLoad'])
-      if (shouldShowWelcomeScreen) {
-        setImmediate(() => tabs.create(welcomeScreenProperties))
-        // We only need to run welcome screen once
-        state = state.setIn(['about', 'welcome', 'showOnLoad'], false)
+      // Show welcome tab in first window on first start,
+      // but not in the buffer window.
+      const windowId = action.getIn(['createProperties', 'windowId'])
+      const bufferWindow = windows.getBufferWindow()
+      if (!bufferWindow || bufferWindow.id !== windowId) {
+        const welcomeScreenProperties = {
+          url: 'about:welcome',
+          windowId
+        }
+        const shouldShowWelcomeScreen = state.getIn(['about', 'welcome', 'showOnLoad'])
+        if (shouldShowWelcomeScreen) {
+          setImmediate(() => tabs.create(welcomeScreenProperties))
+          // We only need to run welcome screen once
+          state = state.setIn(['about', 'welcome', 'showOnLoad'], false)
+        }
       }
       break
     }

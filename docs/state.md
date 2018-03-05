@@ -93,6 +93,7 @@ AppStore
     ledgerVideos: {
       [mediaKey]: {
         publisher: string // publisher key
+        beatData: object // data that we get from a heartbeat
       }
     }
   }
@@ -217,7 +218,7 @@ AppStore
         EUR: number,
         USD: number
       },
-      reconcileFrequency: number // duration between each reconciliation in days
+      reconcileFrequency: number, // duration between each reconciliation in days
       reconcileStamp: number,  // timestamp for the next reconcilation
       transactions: [{
         ballots: {
@@ -346,6 +347,7 @@ AppStore
       publishers: {
         [publisherId]: {
           duration: number,
+          faviconName: string,
           faviconURL: string,
           options: {
             exclude: boolean,
@@ -355,6 +357,8 @@ AppStore
           },
           pinPercentage: number,
           protocol: string,
+          publisherURL: string,
+          providerName: string,
           scores: {
             concave: number,
             visits: number
@@ -373,12 +377,6 @@ AppStore
         }
       }
     }
-  },
-  migrations: {
-    batMercuryTimestamp: integer, // when session is upgraded (and this new schema added)
-    btc2BatTimestamp: integer, // when call was made to backend to convert BTC => BAT
-    btc2BatNotifiedTimestamp: integer, // when user was shown "wallet upgraded" notification
-    btc2BatTransitionPending: boolean // true if user is being shown transition screen
   },
   menu: {
     template: object // used on Windows and by our tests: template object with Menubar control
@@ -600,6 +598,9 @@ AppStore
       name: string, // name of the update
       notes: string // release notes for the active update
     },
+    referralDownloadId: string, // download ID that is returned from the referral server
+    referralTimestamp: number, // timestamp when referral was accumulated (after ~30 days)
+    referralPromoCode: string, // promo code for the referral
     status: string, // updateStatus from js/constants/updateStatus.js
     verbose: boolean // whether to show update UI for checking, downloading, and errors
   },
