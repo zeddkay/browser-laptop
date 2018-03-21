@@ -10,6 +10,8 @@ const {SettingDropdown} = require('../common/dropdown')
 const {DefaultSectionTitle} = require('../common/sectionTitle')
 const BrowserButton = require('../common/browserButton')
 const SitePermissionsPage = require('./sitePermissionsPage')
+const {StyleSheet, css} = require('aphrodite')
+const commonStyles = require('../styles/commonStyles')
 
 // Actions
 const appActions = require('../../../../js/actions/appActions')
