@@ -8,6 +8,8 @@ const appConstants = require('../../../js/constants/appConstants')
 const siteSettings = require('../../../js/state/siteSettings')
 const urlUtil = require('../../../js/lib/urlutil')
 const {makeImmutable} = require('../../common/state/immutableUtil')
+const urlParse = require('../../common/urlParse')
+const {setUserPref} = require('../../../js/state/userPrefs')
 
 const siteSettingsReducer = (state, action, immutableAction) => {
   action = immutableAction || makeImmutable(action)
@@ -78,6 +80,32 @@ const siteSettingsReducer = (state, action, immutableAction) => {
           state = state.setIn([propertyName, hostPattern, key], currentExceptions.merge(origin))
         }
         break
+      }
+    case appConstants.APP_TAB_UPDATED:
+      {
+        let url = action.get('tabValue').get('url')
+        let parsedUrl = urlParse(url)
+        let currentSiteSetting = state.get('siteSettings')
+        let siteSafeBrowsing = true
+        let safeBrowsingAll = state.get('safeBrowsingAll')
+
+        if (safeBrowsingAll === undefined) {
+          break
+        }
+
+        if (currentSiteSetting !== undefined &&
+          (parsedUrl.protocol === 'https:' || parsedUrl.protocol === 'http:')) {
+          let ruleKey = `https?://${parsedUrl.host}`
+          let currentSettings = currentSiteSetting.get(ruleKey)
+          if (currentSettings !== undefined) {
+            siteSafeBrowsing = currentSettings.get('safeBrowsing')
+          }
+        }
+        siteSafeBrowsing = siteSafeBrowsing === undefined ? true : siteSafeBrowsing
+
+        setUserPref('safebrowsing.enabled',
+                     safeBrowsingAll.get('enabled') &&
+                     siteSafeBrowsing)
       }
   }
   return state

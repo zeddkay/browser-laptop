@@ -19,6 +19,8 @@ module.exports.braveryDefaults = (appState, appConfig) => {
   let blockCookiesAll = defaults[appConfig.resourceNames.COOKIEBLOCK_ALL] || false
   let blockFingerprinting = defaults[appConfig.resourceNames.FINGERPRINTING_PROTECTION] || false
   let blockFingerprintingAll = defaults[appConfig.resourceNames.FINGERPRINTING_PROTECTION_ALL] || false
+  let safeBrowsingAll = defaults[appConfig.resourceNames.SAFE_BROWSING_ALL] || false
+  let safeBrowsing = defaults[appConfig.resourceNames.SAFE_BROWSING] || false
 
   defaults.adControl = 'allowAdsAndTracking'
   if (blockAds && replaceAds && blockTracking) {
@@ -30,6 +32,12 @@ module.exports.braveryDefaults = (appState, appConfig) => {
   if (blockCookiesAll) {
     defaults.cookieControl = 'blockAllCookies'
   }
+
+  defaults.safeBrowsingControl = safeBrowsingAll ? 'advancedSafeBrowsing' : 'basicSafeBrowsing'
+  if (!safeBrowsing) {
+    defaults.safeBrowsingControl = 'disableSafeBrowsing'
+  }
+
   defaults.fingerprintingProtection = blockFingerprinting ? 'block3rdPartyFingerprinting' : 'allowAllFingerprinting'
   if (blockFingerprintingAll) {
     defaults.fingerprintingProtection = 'blockAllFingerprinting'
@@ -79,6 +87,18 @@ module.exports.activeSettings = (siteSettings, appState, appConfig) => {
     }
 
     return defaults.adControl
+  })()
+
+  settings.safeBrowsingControl = (() => {
+    if (settings.shieldsUp === false) {
+      return 'disableSafeBrowsing'
+    }
+    if (siteSettings) {
+      if (typeof siteSettings.get('safeBrowsingControl') === 'string') {
+        return siteSettings.get('safeBrowsingControl')
+      }
+    }
+    return defaults.safeBrowsingControl
   })()
 
   settings.cookieControl = (() => {
