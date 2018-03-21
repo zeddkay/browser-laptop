@@ -10,7 +10,7 @@ const {SettingDropdown} = require('../common/dropdown')
 const {DefaultSectionTitle} = require('../common/sectionTitle')
 const BrowserButton = require('../common/browserButton')
 const SitePermissionsPage = require('./sitePermissionsPage')
-const {StyleSheet, css} = require('aphrodite')
+const {css} = require('aphrodite')
 const commonStyles = require('../styles/commonStyles')
 
 // Actions
@@ -77,8 +77,8 @@ class ShieldsTab extends ImmutableComponent {
     appActions.setResourceEnabled(setting, e.target.value)
   }
   onChangeSafeBrowsingControl (e) {
-    aboutActions.setResourceEnabled(safeBrowsing, e.target.value === 'basicSafeBrowsing' || e.target.value === 'advancedSafeBrowsing')
-    aboutActions.setResourceEnabled(safeBrowsingAll, e.target.value === 'advancedSafeBrowsing')
+    appActions.setResourceEnabled(safeBrowsing, e.target.value === 'basicSafeBrowsing' || e.target.value === 'advancedSafeBrowsing')
+    appActions.setResourceEnabled(safeBrowsingAll, e.target.value === 'advancedSafeBrowsing')
   }
   render () {
     return <div id='shieldsContainer'>
