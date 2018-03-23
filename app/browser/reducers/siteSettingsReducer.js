@@ -88,9 +88,10 @@ const siteSettingsReducer = (state, action, immutableAction) => {
         let currentSiteSetting = state.get('siteSettings')
         let siteSafeBrowsing = true
         let safeBrowsingAll = state.get('safeBrowsingAll')
+        let safeBrowsingAllSetting = true
 
-        if (safeBrowsingAll === undefined) {
-          break
+        if (safeBrowsingAll !== undefined) {
+          safeBrowsingAllSetting = safeBrowsingAll.get('enabled')
         }
 
         if (currentSiteSetting !== undefined &&
@@ -104,7 +105,7 @@ const siteSettingsReducer = (state, action, immutableAction) => {
         siteSafeBrowsing = siteSafeBrowsing === undefined ? true : siteSafeBrowsing
 
         setUserPref('safebrowsing.enabled',
-                     safeBrowsingAll.get('enabled') &&
+                     safeBrowsingAllSetting  &&
                      siteSafeBrowsing)
       }
   }
