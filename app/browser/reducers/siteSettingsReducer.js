@@ -105,7 +105,7 @@ const siteSettingsReducer = (state, action, immutableAction) => {
         siteSafeBrowsing = siteSafeBrowsing === undefined ? true : siteSafeBrowsing
 
         setUserPref('safebrowsing.enabled',
-                     safeBrowsingAllSetting  &&
+                     safeBrowsingAllSetting &&
                      siteSafeBrowsing)
       }
   }
