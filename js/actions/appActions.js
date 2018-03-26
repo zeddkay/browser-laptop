@@ -1841,6 +1841,16 @@ const appActions = {
     })
   },
 
+  nativeNotificationCreate: function (windowId, options) {
+    dispatch({
+      actionType: appConstants.APP_NATIVE_NOTIFICATION_CREATE,
+      options,
+      queryInfo: {
+        windowId
+      }
+    })
+  },
+
   onPublisherTimestamp: function (timestamp, updateList) {
     dispatch({
       actionType: appConstants.APP_ON_PUBLISHER_TIMESTAMP,
@@ -1958,13 +1968,6 @@ const appActions = {
   onHistoryLimit: function () {
     dispatch({
       actionType: appConstants.APP_ON_HISTORY_LIMIT
-    })
-  },
-
-  onNativeNotificationClick: function (data) {
-    dispatch({
-      actionType: appConstants.APP_ON_NATIVE_NOTIFICATION_CLICK,
-      data
     })
   },
 

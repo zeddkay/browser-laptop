@@ -1098,8 +1098,7 @@ module.exports.defaultAppState = () => {
       },
       promotion: {}
     },
-    usermodel: {
-    }
+    userModel: {}
   }
 }
 
