@@ -1933,10 +1933,11 @@ const appActions = {
     })
   },
 
-  onUserModelDemoValue: function (value) {
+  onUserModelLog: function (eventName, data) {
     dispatch({
-      actionType: appConstants.APP_ON_USERMODEL_DEMO_VALUE,
-      value
+      actionType: appConstants.APP_ON_USERMODEL_LOG,
+      eventName,
+      data
     })
   },
 

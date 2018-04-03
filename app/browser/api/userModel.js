@@ -18,8 +18,6 @@ const notificationTypes = require('../../common/constants/notificationTypes')
 const urlUtil = require('../../../js/lib/urlutil')
 const ledgerUtil = require('../../common/lib/ledgerUtil')
 
-const truncateUrl = require('truncate-url')
-
 let matrixData
 let priorData
 let sampleAdFeed
@@ -118,14 +116,13 @@ function randomKey (dictionary) {
 }
 
 const goAheadAndShowTheAd = (windowId, categoryName, notificationText, notificationUrl) => {
-  appActions.onUserModelDemoValue(`Ads shown: ${categoryName}`)
   appActions.nativeNotificationCreate(
     windowId,
     {
-      title: `Brave Ad: ${categoryName}`,
+      title: categoryName,
       message: notificationText,
       sound: false,
-      timeout: 15,
+      timeout: 60,
       wait: true,
       data: {
         windowId,
@@ -181,12 +178,8 @@ const classifyPage = (state, action, windowId) => {
   let indexOfMax = um.vectorIndexOfMax(scores)
 
   let winnerOverTime = catNames[indexOfMax]
-  let maxLength = 40
 
-  let shortUrl = truncateUrl(url, maxLength)
-  let logString = 'Current Page [' + shortUrl + '] Class: ' + immediateWinner + ' Moving Average of Classes: ' + winnerOverTime
-  console.log(logString)
-  appActions.onUserModelDemoValue(['log item: ', logString])
+  appActions.onUserModelLog('Site visited', {url, 'class': immediateWinner, 'average': winnerOverTime})
 
   return state
 }
@@ -235,12 +228,12 @@ const basicCheckReadyAdServe = (state, windowId) => {
 
   if (!userModelState.allowedToShowAdBasedOnHistory(state)) {
     allGood = false
-    appActions.onUserModelDemoValue(['log item: ', 'prevented from showing ad based on history'])
+    appActions.onUserModelLog('Ad prevented', {notificationUrl})
   }
 
   if (allGood) {
     goAheadAndShowTheAd(windowId, winnerOverTime, notificationText, notificationUrl)
-    appActions.onUserModelDemoValue(['log item: ', 'ad shown', winnerOverTime, notificationText, notificationUrl])
+    appActions.onUserModelLog('Ad shown', {notificationUrl, notificationText, winnerOverTime})
     state = userModelState.appendAdShownToAdHistory(state)
   }
 
