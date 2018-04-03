@@ -13,8 +13,12 @@ const webviewActions = require('../../../../js/actions/webviewActions')
 // state
 const frameStateUtil = require('../../../../js/state/frameStateUtil')
 
+// constants
+const settings = require('../../../../js/constants/settings')
+
 // utils
 const {getCurrentWindowId, isFocused} = require('../../currentWindow')
+const {getSetting} = require('../../../../js/settings')
 
 class GuestInstanceRenderer extends React.Component {
   constructor (props) {
@@ -31,6 +35,8 @@ class GuestInstanceRenderer extends React.Component {
     const frameIsInWindow = frame && frame.get('tabStripWindowId') === getCurrentWindowId()
 
     const props = {
+      displayDebugInfo: getSetting(settings.DEBUG_VERBOSE_TAB_INFO),
+      activeFrameKey: state.getIn(['currentWindow', 'activeFrameKey']),
       guestInstanceId: frameIsInWindow && frameIsReady && frame.get('guestInstanceId'),
       tabId: frameIsInWindow && frameIsReady && frame.get('tabId'),
       isDefaultNewTabLocation: location === 'about:newtab',
@@ -108,13 +114,18 @@ class GuestInstanceRenderer extends React.Component {
   }
 
   render () {
+    const debugInfo = this.props.displayDebugInfo
+      ? `WindowId: ${getCurrentWindowId()}, TabId: ${this.props.tabId}, GuestId: ${this.props.guestInstanceId}, FrameKey: ${this.props.frameKey}, activeFrameKey: ${this.props.activeFrameKey}, windowIsFocused: ${this.props.windowIsFocused}`
+      : null
     return (
       <div
         className={css(
           styles.guestInstanceRenderer,
           this.props.isDefaultNewTabLocation && styles.guestInstanceRenderer_isDefaultNewTabLocation,
-          this.props.isBlankLocation && styles.guestInstanceRenderer_isBlankLocation
+          this.props.isBlankLocation && styles.guestInstanceRenderer_isBlankLocation,
+          this.props.displayDebugInfo && styles.guestInstanceRenderer_visualDebug
         )}
+        data-debuginfo={debugInfo}
         ref={this.setWebviewRef}
       />
     )
@@ -143,6 +154,19 @@ const styles = StyleSheet.create({
   },
 
   guestInstanceRenderer_isBlankLocation: {
+  },
+
+  guestInstanceRenderer_visualDebug: {
+    ':after': {
+      zIndex: '20',
+      content: 'attr(data-debuginfo)',
+      position: 'absolute',
+      padding: '5px',
+      background: '#111',
+      color: 'white',
+      fontSize: '12px',
+      border: '1px dashed white'
+    }
   },
 
   guestInstanceRenderer__webview: {
