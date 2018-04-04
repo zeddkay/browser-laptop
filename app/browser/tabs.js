@@ -650,29 +650,6 @@ const api = {
         appActions.tabWillAttach(tab.getId())
       })
 
-      tab.on('tab-detached-at', () => {
-        const tabValue = getTabValue(tabId)
-        if (tabValue) {
-          const windowId = tabValue.get('windowId')
-          if (shouldDebugTabEvents) {
-            console.log(`tab ${tabId} detached from window ${windowId}`)
-          }
-          // forget about this tab in the history of active tabs
-          activeTabHistory.clearTabFromWindow(windowId, tabId)
-          // handle closed tab being the current active tab for window
-          if (tabValue.get('active')) {
-            // set the next active tab, if different from what muon will have set to
-            // Muon sets it to the next index (immediately above or below)
-            // But this app can be configured to select the parent tab,
-            // or the last active tab
-            let nextTabId = api.getNextActiveTabId(windowId, tabId)
-            if (nextTabId != null) {
-              api.setActive(nextTabId)
-            }
-          }
-        }
-      })
-
       tab.on('set-active', (sender, isActive) => {
         updateTab(tab.getId(), { active: isActive })
         if (isActive) {
@@ -763,6 +740,7 @@ const api = {
       })
 
       tab.once('will-destroy', (e) => {
+        api.willBeRemovedFromWindow(tabId)
         const tabValue = getTabValue(tabId)
         if (tabValue) {
           const windowId = tabValue.get('windowId')
@@ -873,6 +851,33 @@ const api = {
         `Asked for tab ${tabId} to be discarded but ` +
         (tab ? 'tab was not in cache' : 'tab was discarded')
       )
+    }
+  },
+
+  willBeRemovedFromWindow (tabId) {
+    const tabValue = getTabValue(tabId)
+    if (tabValue) {
+      const windowId = tabValue.get('windowId')
+      const wasActive = tabValue.get('active')
+      if (shouldDebugTabEvents) {
+        console.log(`tab ${tabId} will be removed from window ${windowId}, wasActive: ${wasActive}`)
+      }
+      // forget about this tab in the history of active tabs
+      activeTabHistory.clearTabFromWindow(windowId, tabId)
+      // handle closed tab being the current active tab for window
+      if (wasActive) {
+        // set the next active tab, if different from what muon will have set to
+        // Muon sets it to the next index (immediately above or below)
+        // But this app can be configured to select the parent tab,
+        // or the last active tab
+        let nextTabId = api.getNextActiveTabId(windowId, tabId)
+        if (nextTabId != null) {
+          if (shouldDebugTabEvents) {
+            console.log(`Got next active tab Id of ${nextTabId}`)
+          }
+          api.setActive(nextTabId)
+        }
+      }
     }
   },
 
@@ -1150,6 +1155,7 @@ const api = {
     // create a new window if required
     if (toWindowId == null || toWindowId === -1) {
       // this will eventually call tab.moveTo when the window is known
+      api.willBeRemovedFromWindow(tabId, currentWindowId)
       appActions.newWindow(frameOpts, browserOpts)
       return
     }
@@ -1164,6 +1170,7 @@ const api = {
       console.error('Error: invalid window to move tab to')
       return
     }
+    api.willBeRemovedFromWindow(tabId, currentWindowId)
     notifyWindowWebContentsAdded(toWindowId, frameOpts.toJS(), tabValue.toJS())
     tab.moveTo(toIndex, toWindowId)
   },
