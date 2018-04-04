@@ -4,32 +4,61 @@ const frameState = require('../common/state/frameState')
 const appActions = require('../../js/actions/appActions')
 const debounce = require('../../js/lib/debounce')
 
+function mapFramesByKey (immutableFrameList) {
+  const frames = { }
+  for (const frame of immutableFrameList.values()) {
+    const frameKey = frame.get('key')
+    if (frameKey == null) {
+      console.error('immutableFrameList had frame with invalid key', { frame, immutableFrameList })
+      continue
+    }
+    frames[frameKey] = frame.delete('lastAccessedTime')
+  }
+  return frames
+}
+
+
 module.exports = function trackFrameChanges () {
   // relay frame changes back to browser
-  let state = windowStore.state
-  windowStore.addChangeListener(debounce(() => {
-    const t0 = performance.now()
-    const lastState = state
-    state = windowStore.state
-    const currentFrames = state.get('frames')
-    if (!currentFrames) {
+  let frames = { }
+  let idleCallbackId = null
+
+  // compare frames to previous state and only send those changed in an action
+  const relayFrameChanges = () => {
+    idleCallbackId = null
+    const state = windowStore.state
+    const shouldDebugStoreActions = state.get('debugStoreActions')
+    let t0
+    if (shouldDebugStoreActions) {
+      t0 = window.performance.now()
+    }
+    const currentFrameState = state.get('frames')
+    if (!currentFrameState) {
       return
     }
+    const lastFrames = frames
+    frames = mapFramesByKey(currentFrameState)
     const changedFrames = []
-    for (const frame of currentFrames.valueSeq()) {
-      if (frame.isEmpty()) {
-        continue
-      }
-      const frameKey = frame.get('key')
+    for (const frameKey in frames) {
       // does it exist in the last version of state?
-      const lastFrame = frameState.getByFrameKey(lastState, frameKey)
-      if (!lastFrame || !lastFrame.delete('lastAccessedTime').equals(frame.delete('lastAccessedTime'))) {
+      const frame = frames[frameKey]
+      const lastFrame = lastFrames[frameKey]
+      if (!lastFrame || !lastFrame.equals(frame)) {
         changedFrames.push(Immutable.Map().set('frame', frame))
       }
     }
     if (changedFrames.length) {
       appActions.framesChanged(changedFrames)
     }
-    console.log(`Spent ${performance.now() - t0}ms figuring out frame changes (${changedFrames.length} changed)`)
-  }, 200))
+    if (shouldDebugStoreActions) {
+      console.log(`%cSpent ${window.performance.now() - t0}ms figuring out frame changes (${changedFrames.length} changed)`, 'color: #bbb')
+    }
+  }
+
+  // compare frames when state changes debounced, and only when thread is idle
+  const onWindowStoreChanged = debounce(() => {
+    idleCallbackId = idleCallbackId || window.requestIdleCallback(relayFrameChanges, { timeout: 1000 })
+  }, 250)
+
+  windowStore.addChangeListener(onWindowStoreChanged)
 }
