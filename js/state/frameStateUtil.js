@@ -10,7 +10,7 @@ const settings = require('../constants/settings')
 
 // Actions
 const windowActions = require('../actions/windowActions')
-const webviewActions = require('../actions/webviewActions')
+const tabActions = require('../../app/common/actions/tabActions')
 
 // State
 const {makeImmutable} = require('../../app/common/state/immutableUtil')
@@ -436,7 +436,7 @@ function getFrameTabPageIndex (state, tabId, tabsPerTabPage = getSetting(setting
 
 function onFindBarHide (frameKey) {
   windowActions.setFindbarShown(frameKey, false)
-  webviewActions.stopFindInPage()
+  tabActions.stopFindInPageRequest()
   windowActions.setFindDetail(frameKey, Immutable.fromJS({
     internalFindStatePresent: false,
     numberOfMatches: -1,
