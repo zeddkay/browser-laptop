@@ -315,8 +315,9 @@ const tabsReducer = (state, action, immutableAction) => {
     case appConstants.APP_TAB_SET_FULL_SCREEN: {
       const isFullscreen = action.get('isFullScreen')
       const tabId = action.get('tabId')
-      if (isFullscreen === true || isFullscreen === false)
-      tabs.setFullScreen(tabId, isFullscreen)
+      if (isFullscreen === true || isFullscreen === false) {
+        tabs.setFullScreen(tabId, isFullscreen)
+      }
       break
     }
     case appConstants.APP_TAB_TOGGLE_DEV_TOOLS:
