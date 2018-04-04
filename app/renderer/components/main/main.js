@@ -548,7 +548,6 @@ class Main extends React.Component {
     props.activeFrameKey = activeFrame.get('key')
     if (window.activeFrameKey !== props.activeFrameKey) {
       window.activeFrameKey = props.activeFrameKey
-      console.log('main: active frame key changed', props.activeFrameKey)
     }
     props.previewFrameKey = frameStateUtil.getPreviewFrameKey(currentWindow)
     props.isFullScreen = activeFrame.get('isFullScreen', false)

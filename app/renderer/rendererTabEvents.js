@@ -54,7 +54,6 @@ const api = module.exports = {
   handleTabEvent (tabId, eventType, e) {
     switch (eventType) {
       case 'tab-detached-at': {
-        console.error(`window tab-detached-at ${tabId}`)
         windowActions.removeFrame(tabId)
         break
       }
