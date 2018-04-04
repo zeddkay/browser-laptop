@@ -5,7 +5,9 @@
 'use strict'
 
 const appConfig = require('../../../js/constants/appConfig')
+const webrtcConstants = require('../../../js/constants/webrtcConstants')
 const appConstants = require('../../../js/constants/appConstants')
+const settings = require('../../../js/constants/settings')
 const tabs = require('../tabs')
 const windows = require('../windows')
 const {getWebContents} = require('../webContentsCache')
@@ -26,23 +28,27 @@ const {frameOptsFromFrame} = require('../../../js/state/frameStateUtil')
 const {isSourceAboutUrl, isTargetAboutUrl, isNavigatableAboutPage} = require('../../../js/lib/appUrlUtil')
 const {shouldDebugTabEvents} = require('../../cmdLine')
 
-const WEBRTC_DEFAULT = 'default'
-const WEBRTC_DISABLE_NON_PROXY = 'disable_non_proxied_udp'
-
 const getWebRTCPolicy = (state, tabId) => {
+  const webrtcSetting = state.getIn(['settings', settings.WEBRTC_POLICY])
+  if (webrtcSetting && webrtcSetting !== webrtcConstants.default) {
+    // Global webrtc setting overrides fingerprinting shield setting
+    return webrtcSetting
+  }
+
   const tabValue = tabState.getByTabId(state, tabId)
   if (tabValue == null) {
-    return WEBRTC_DEFAULT
+    return webrtcConstants.default
   }
+
   const allSiteSettings = siteSettingsState.getAllSiteSettings(state, tabValue.get('incognito') === true)
   const tabSiteSettings =
     siteSettings.getSiteSettingsForURL(allSiteSettings, tabValue.get('url'))
   const activeSiteSettings = siteSettings.activeSettings(tabSiteSettings, state, appConfig)
 
   if (!activeSiteSettings || activeSiteSettings.fingerprintingProtection !== true) {
-    return WEBRTC_DEFAULT
+    return webrtcConstants.default
   } else {
-    return WEBRTC_DISABLE_NON_PROXY
+    return webrtcConstants.disableNonProxiedUdp
   }
 }
 
