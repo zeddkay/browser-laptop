@@ -21,7 +21,7 @@ const api = {
     // TODO: don't have activeFrame param when reselect is used for state retrieval memoization
     const urlbar = api.getActiveFrameUrlBarState(activeFrame)
     const activeFrameIsPrivate = activeFrame.get('isPrivate')
-    const urlbarSearchDetail = urlbar.get('searchDetail')
+    const urlbarSearchDetail = urlbar && urlbar.get('searchDetail')
     const appSearchDetail = state.get('searchDetail')
     const activateSearchEngine = urlbarSearchDetail && urlbarSearchDetail.get('activateSearchEngine')
 
