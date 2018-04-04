@@ -654,7 +654,9 @@ const api = {
         const tabValue = getTabValue(tabId)
         if (tabValue) {
           const windowId = tabValue.get('windowId')
-          console.log(`tab ${tabId} detached from window ${windowId}`)
+          if (shouldDebugTabEvents) {
+            console.log(`tab ${tabId} detached from window ${windowId}`)
+          }
           // forget about this tab in the history of active tabs
           activeTabHistory.clearTabFromWindow(windowId, tabId)
           // handle closed tab being the current active tab for window
