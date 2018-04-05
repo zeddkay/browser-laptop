@@ -18,13 +18,16 @@ const notificationUtil = {
   onClick: null,
   createNotification: (options) => {
     if (!options) {
+      appActions.onUserModelLog('no notification options provided')
+      console.error('no notification options provided')
       return
     }
 
     options = immutableUtil.makeJS(options)
 
     if (!options.title) {
-      console.log('Title is not provided for the notification')
+      appActions.onUserModelLog('no notification title provided', options)
+      console.error('no notification title provided')
       return
     }
 
@@ -55,6 +58,7 @@ const notificationUtil = {
 
     if (extras) extras = extras()
     if (!extras) {
+      appActions.onUserModelLog('notification not supported', { type: type })
       console.error('notifications not supported')
       return
     }
@@ -83,10 +87,11 @@ const notificationUtil = {
           'the user dismissed this toast': 'closed'
         }[arguments[1]]
       }
+      if (!result) result = 'unknown'
+      if (result.indexOf('Clicked') !== -1) result = 'clicked'
+      if (result === 'timeout') result = 'ignored'
 
-      if (result === 'closed') {
-        appActions.onUserModelLog('User closed the ad')
-      }
+      appActions.onUserModelLog('notification result', { result: result })
     })
   },
 
@@ -100,7 +105,7 @@ const notificationUtil = {
             url: data.notificationUrl,
             windowId: data.windowId
           })
-          appActions.onUserModelLog('User clicked on ad', {notificationUrl: data.notificationUrl})
+          appActions.onUserModelLog('notification click', { notificationUrl: data.notificationUrl })
           break
         }
     }
@@ -112,7 +117,7 @@ const notificationUtil = {
     switch (data.notificationId) {
       case notificationTypes.ADS:
         {
-          appActions.onUserModelLog('Ad timeout', {notificationUrl: data.notificationUrl})
+          appActions.onUserModelLog('notification timeout', { notificationUrl: data.notificationUrl })
           break
         }
     }
