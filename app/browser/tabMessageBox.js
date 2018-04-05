@@ -1,6 +1,7 @@
 const appActions = require('../../js/actions/appActions')
 const tabMessageBoxState = require('../common/state/tabMessageBoxState')
 const {makeImmutable} = require('../common/state/immutableUtil')
+const {shouldDebugTabEvents} = require('../cmdLine')
 
 // callbacks for alert, confirm, etc.
 let messageBoxCallbacks = {}
@@ -15,9 +16,15 @@ const cleanupCallback = (tabId) => {
 
 const tabMessageBox = {
   init: (state, action) => {
-    process.on('window-alert', (webContents, extraData, title, message, defaultPromptText,
-      shouldDisplaySuppressCheckbox, isBeforeUnloadDialog, isReload, muonCb) => {
+    process.on('window-alert', (
+      webContents, extraData, title, message,
+      defaultPromptText, shouldDisplaySuppressCheckbox,
+      isBeforeUnloadDialog, isReload, muonCb
+    ) => {
       const tabId = webContents.getId()
+      if (shouldDebugTabEvents) {
+        console.log(`Tab [${tabId}] window-alert`)
+      }
       const detail = {
         message,
         title,
@@ -29,9 +36,15 @@ const tabMessageBox = {
       tabMessageBox.show(tabId, detail, muonCb)
     })
 
-    process.on('window-confirm', (webContents, extraData, title, message, defaultPromptText,
-        shouldDisplaySuppressCheckbox, isBeforeUnloadDialog, isReload, muonCb) => {
+    process.on('window-confirm', (
+      webContents, extraData, title, message,
+      defaultPromptText, shouldDisplaySuppressCheckbox,
+      isBeforeUnloadDialog, isReload, muonCb
+    ) => {
       const tabId = webContents.getId()
+      if (shouldDebugTabEvents) {
+        console.log(`Tab [${tabId}] window-confirm`)
+      }
       const detail = {
         message,
         title,
@@ -44,8 +57,15 @@ const tabMessageBox = {
       tabMessageBox.show(tabId, detail, muonCb)
     })
 
-    process.on('window-prompt', (webContents, extraData, title, message, defaultPromptText,
-          shouldDisplaySuppressCheckbox, isBeforeUnloadDialog, isReload, muonCb) => {
+    process.on('window-prompt', (
+      webContents, extraData, title,
+      message, defaultPromptText, shouldDisplaySuppressCheckbox,
+      isBeforeUnloadDialog, isReload, muonCb
+    ) => {
+      const tabId = webContents.getId()
+      if (shouldDebugTabEvents) {
+        console.log(`Tab [${tabId}] window-confirm`)
+      }
       console.warn('window.prompt is not supported yet')
       let suppress = false
       muonCb(null, '', suppress)

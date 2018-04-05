@@ -62,6 +62,7 @@ const menuBarState = require('../../../common/state/menuBarState')
 const windowState = require('../../../common/state/windowState')
 const updateState = require('../../../common/state/updateState')
 const tabState = require('../../../common/state/tabState')
+const tabMessageBoxState = require('../../../common/state/tabMessageBoxState')
 
 // Util
 const _ = require('underscore')
@@ -588,6 +589,7 @@ class Main extends React.Component {
     props.loginRequiredUrl = loginRequiredDetails
       ? urlResolve(loginRequiredDetails.getIn(['request', 'url']), '/')
       : null
+    props.showMessageBox = tabMessageBoxState.hasMessageBoxDetail(state, activeTabId)
 
     // used in other functions
     props.menubarSelectedIndex = currentWindow.getIn(['ui', 'menubar', 'selectedIndex'])
