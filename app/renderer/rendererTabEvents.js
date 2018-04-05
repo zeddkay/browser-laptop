@@ -78,7 +78,6 @@ const api = module.exports = {
         break
       }
       case 'context-menu': {
-        console.log('context menu')
         const frame = getFrameByTabId(tabId)
         if (!frame.isEmpty()) {
           contextMenus.onMainContextMenu(e.params, frame, getTab(tabId))
@@ -96,7 +95,6 @@ const api = module.exports = {
         break
       }
       case 'page-favicon-updated': {
-        console.log('page-fav-upd')
         const frame = getFrameByTabId(tabId)
         if (!frame.isEmpty() &&
             e.favicons &&
