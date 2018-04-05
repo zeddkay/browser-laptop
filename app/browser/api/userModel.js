@@ -121,7 +121,7 @@ const goAheadAndShowTheAd = (windowId, categoryName, notificationText, notificat
     {
       title: categoryName,
       message: notificationText,
-      sound: false,
+      sound: true,
       timeout: 60,
       wait: true,
       data: {
