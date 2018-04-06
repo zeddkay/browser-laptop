@@ -646,6 +646,16 @@ const api = {
       defaultOptions,
       windowOptionsIn
     )
+    // validate activeFrameKey if provided
+    let activeFrameKey = immutableState.get('activeFrameKey')
+    if (frames && frames.length && activeFrameKey) {
+      const keyIsValid = frames.some(frame => frame.key === activeFrameKey)
+      if (!keyIsValid) {
+        // make first frame active if invalid key provided
+        activeFrameKey = frames[0].key
+      }
+      immutableState = immutableState.set('activeFrameKey', activeFrameKey)
+    }
     // will only hide until rendered if the options specify to show window
     // so that a caller can control showing the window themselves with the option { show: false }
     const showWhenRendered = hideUntilRendered && windowOptions.show
