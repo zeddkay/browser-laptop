@@ -45,12 +45,6 @@ function clearFramesFromWindowState (windowState) {
     .set('tabs', Immutable.List())
 }
 
-function setInitialWindowState (windowState) {
-  return windowState
-    .set('debugStoreActions', shouldDebugStoreActions)
-    .set('debugTabEvents', shouldDebugTabEvents)
-}
-
 /**
  * Determine the frame(s) to be loaded in a new window
  * based on user preferences
@@ -169,7 +163,6 @@ const handleCreateWindowAction = (state, action) => {
   const frameOpts = (action.get('frameOpts') || Immutable.Map()).toJS()
   let browserOpts = (action.get('browserOpts') || Immutable.Map()).toJS()
   let immutableWindowState = action.get('restoredState') || Immutable.Map()
-  immutableWindowState = setInitialWindowState(immutableWindowState)
   state = setDefaultWindowSize(state)
   const defaults = windowDefaults(state)
   const isMaximized = setMaximized(state, browserOpts, immutableWindowState)
