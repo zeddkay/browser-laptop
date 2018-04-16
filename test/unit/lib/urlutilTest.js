@@ -164,7 +164,18 @@ describe('urlutil', function () {
     it('calls prependScheme', function () {
       assert.equal(urlUtil.getUrlFromInput('/file/path/to/file'), 'file:///file/path/to/file')
     })
-    
+    it('should successfully search for dog cat instead of searching for entire url', function () {
+      assert.equal(urlUtil.isNotURL('https://www.google.ca/search?q=dog cat'), false)
+    })
+    it('should successfully search for dog cat instead of searching for entire url despite multiple leading/ending spaces', function () {
+      assert.equal(urlUtil.isNotURL('  https://www.google.ca/search?q=dog cat  '), false)
+    })
+    //uncomment this after changing to your own file schema 
+    /*
+    it('should successfully search for file despite multiple leading/ending spaces', function () {
+      assert.equal(urlUtil.isNotURL('/Users/zukhrufkhan/Documents/DPS909/browser-laptop/test brave.txt'), false)
+    })
+    */
   })
 
   describe('isURL', function () {
